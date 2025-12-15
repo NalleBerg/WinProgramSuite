@@ -1,0 +1,14 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+C:/Users/nalle/Documents/C++/Workspace/WinUpdate/resource.h
+
+C:/Users/nalle/Documents/C++/Workspace/WinUpdate/winupdate.rc
+resource.h
+C:/Users/nalle/Documents/C++/Workspace/WinUpdate/resource.h
+

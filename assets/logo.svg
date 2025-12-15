@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" aria-labelledby="title">
+  <title id="title">WinUpdate logo (match wininfoapp.ico, no text)</title>
+  <!-- canvas -->
+  <rect width="256" height="256" fill="none" />
+
+  <!-- Background rounded square matching dominant color #2b3947 -->
+  <defs>
+    <linearGradient id="bggrad" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#344252" />
+      <stop offset="1" stop-color="#2b3947" />
+    </linearGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#000000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#soft)">
+    <rect x="20" y="20" rx="36" ry="36" width="216" height="216" fill="url(#bggrad)" />
+  </g>
+
+  <!-- small white four-pane window centered slightly above center -->
+  <g transform="translate(88,68)">
+    <rect x="0" y="0" width="24" height="24" rx="4" fill="#FFFFFF" />
+    <rect x="30" y="0" width="24" height="24" rx="4" fill="#FFFFFF" />
+    <rect x="0" y="30" width="24" height="24" rx="4" fill="#FFFFFF" />
+    <rect x="30" y="30" width="24" height="24" rx="4" fill="#FFFFFF" />
+  </g>
+
+  <!-- Bottom-arc anticlockwise arrow (↳) in same hue as white window's accent (use slightly lighter tone) -->
+  <path d="M168 144 A24 24 0 0 1 200 176 L180 176" fill="none" stroke="#FFFFFF" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M200 176 L186 162" fill="none" stroke="#FFFFFF" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" />
+
+</svg>
