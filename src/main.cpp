@@ -35,6 +35,7 @@ const wchar_t CLASS_NAME[] = L"WinUpdateClass";
 #define IDC_LISTVIEW 1004
 #define IDC_CHECK_SELECTALL 2001
 #define IDC_BTN_UPGRADE 2002
+// IDC_BTN_PASTE removed: app will auto-scan winget at startup/refresh
 #define IDC_COMBO_LANG 3001
 #define WM_REFRESH_ASYNC (WM_APP + 1)
 #define WM_REFRESH_DONE  (WM_APP + 2)
@@ -42,6 +43,28 @@ const wchar_t CLASS_NAME[] = L"WinUpdateClass";
 // Forward declarations for functions defined later in the file
 static void ParseWingetTextForPackages(const std::string &text);
 static std::vector<std::pair<std::string,std::string>> ExtractIdsFromNameIdText(const std::string &text);
+// forward declarations for parsers used by ParseRawWingetTextInMemory
+static void ParseUpgradeFast(const std::string &text, std::set<std::pair<std::string,std::string>> &outSet);
+static void ExtractUpdatesFromText(const std::string &text, std::set<std::pair<std::string,std::string>> &outSet);
+static void ParseWingetUpgradeTableForUpdates(const std::string &text, std::set<std::pair<std::string,std::string>> &outSet);
+// Process raw winget output held in memory (no files): try multiple parsers
+static std::vector<std::pair<std::string,std::string>> ParseRawWingetTextInMemory(const std::string &text) {
+    std::set<std::pair<std::string,std::string>> found;
+    if (text.empty()) return {};
+    // Try fast header-aware parser first
+    ParseUpgradeFast(text, found);
+    // If empty, try the tolerant extractor
+    if (found.empty()) ExtractUpdatesFromText(text, found);
+    // If still empty, try the more general regex-based upgrade table parser
+    if (found.empty()) {
+        std::set<std::pair<std::string,std::string>> tmp;
+        ParseWingetUpgradeTableForUpdates(text, tmp);
+        for (auto &p : tmp) found.insert(p);
+    }
+    std::vector<std::pair<std::string,std::string>> out;
+    for (auto &p : found) out.emplace_back(p.first, p.second);
+    return out;
+}
 
 // Globals
 static std::vector<std::pair<std::string,std::string>> g_packages;
@@ -70,6 +93,7 @@ static std::string g_locale = "en";
 // forward declare helper functions used by i18n loader (defined later)
 static std::string ReadFileUtf8(const std::wstring &path);
 static std::wstring Utf8ToWide(const std::string &s);
+static std::string WideToUtf8(const std::wstring &w);
 
 static void InitDefaultTranslations() {
     if (!g_i18n_default.empty()) return;
@@ -77,8 +101,9 @@ static void InitDefaultTranslations() {
     g_i18n_default["app_title"] = "WinUpdate";
     g_i18n_default["list_last_updated_prefix"] = "List last updated:";
     g_i18n_default["select_all"] = "Select all";
-    g_i18n_default["upgrade_now"] = "Upgrade now";
+    g_i18n_default["upgrade_now"] = "Install updates";
     g_i18n_default["refresh"] = "Refresh";
+    g_i18n_default["lang_changed"] = "Language changed to English (UK)";
     g_i18n_default["package_col"] = "Package";
     g_i18n_default["id_col"] = "Id";
     g_i18n_default["loading_title"] = "Loading, please";
@@ -346,70 +371,66 @@ static LRESULT CALLBACK PopupWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 
 // Run a command, capture stdout/stderr to a temp file, return exit code and UTF-8 output.
 static std::pair<int,std::string> RunProcessCaptureExitCode(const std::wstring &cmd, int timeoutMs) {
-    std::wstring command = cmd;
-    wchar_t tmpPathBuf[MAX_PATH];
-    GetTempPathW(MAX_PATH, tmpPathBuf);
-    unsigned long long uniq = GetTickCount64();
-    std::wstring batch = std::wstring(tmpPathBuf) + L"wup_run_" + std::to_wstring(uniq) + L".bat";
-    std::wstring outfn = std::wstring(tmpPathBuf) + L"wup_out_" + std::to_wstring(uniq) + L".txt";
-
-    auto toUtf8 = [](const std::wstring &w)->std::string {
-        if (w.empty()) return std::string();
-        int sz = WideCharToMultiByte(CP_UTF8, 0, w.data(), (int)w.size(), NULL, 0, NULL, NULL);
-        if (sz <= 0) return std::string();
-        std::string out(sz, 0);
-        WideCharToMultiByte(CP_UTF8, 0, w.data(), (int)w.size(), &out[0], sz, NULL, NULL);
-        return out;
-    };
-
-    std::string nbatch = toUtf8(batch);
-    std::string nout = toUtf8(outfn);
-    std::string ncmd = toUtf8(command);
-
-    try {
-        std::ofstream ofs(nbatch, std::ios::binary);
-        if (ofs) {
-            ofs << "@echo off\r\n";
-            ofs << ncmd << " > \"" << nout << "\" 2>&1\r\n";
-            ofs.close();
-        }
-    } catch(...) {}
+    // Launch the given command line and capture stdout+stderr via pipes (no temp files).
+    std::pair<int,std::string> result = {-1, std::string()};
+    SECURITY_ATTRIBUTES sa{}; sa.nLength = sizeof(sa); sa.bInheritHandle = TRUE; sa.lpSecurityDescriptor = NULL;
+    HANDLE hRead = NULL, hWrite = NULL;
+    if (!CreatePipe(&hRead, &hWrite, &sa, 0)) return result;
+    // ensure read handle is not inherited
+    SetHandleInformation(hRead, HANDLE_FLAG_INHERIT, 0);
 
     STARTUPINFOW si{}; si.cb = sizeof(si);
+    si.dwFlags |= STARTF_USESTDHANDLES;
+    si.hStdOutput = hWrite;
+    si.hStdError = hWrite;
+    si.hStdInput = NULL;
+
     PROCESS_INFORMATION pi{};
-    std::wstring runCmd = L"cmd.exe /C \"" + batch + L"\"";
-    BOOL ok = CreateProcessW(NULL, &runCmd[0], NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi);
-    DWORD exitCode = 0;
-    std::string output;
+    // copy command into writable buffer for CreateProcess
+    std::wstring cmdCopy = cmd;
+    BOOL ok = CreateProcessW(NULL, &cmdCopy[0], NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi);
+    // close write end in parent regardless
+    CloseHandle(hWrite);
     if (!ok) {
-        try { std::ifstream ifs(nout, std::ios::binary); if (ifs) { std::ostringstream ss; ss << ifs.rdbuf(); output = ss.str(); } } catch(...) {}
-        DeleteFileW(batch.c_str()); DeleteFileW(outfn.c_str());
-        return { -1, output };
+        CloseHandle(hRead);
+        return result;
     }
+
     DWORD wait = WaitForSingleObject(pi.hProcess, timeoutMs > 0 ? (DWORD)timeoutMs : INFINITE);
     if (wait == WAIT_TIMEOUT) {
         TerminateProcess(pi.hProcess, 1);
-        exitCode = (DWORD)-2;
+        result.first = -2; // timeout sentinel
     } else {
-        GetExitCodeProcess(pi.hProcess, &exitCode);
+        DWORD exitCode = 0; GetExitCodeProcess(pi.hProcess, &exitCode); result.first = (int)exitCode;
     }
+
+    // read all available output from pipe
+    std::string output;
+    const DWORD bufSize = 4096;
+    char buffer[bufSize];
+    DWORD read = 0;
+    while (ReadFile(hRead, buffer, bufSize, &read, NULL) && read > 0) {
+        output.append(buffer, buffer + read);
+    }
+
+    CloseHandle(hRead);
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
 
-    try { std::ifstream ifs(nout, std::ios::binary); if (ifs) { std::ostringstream ss; ss << ifs.rdbuf(); output = ss.str(); } } catch(...) {}
-    DeleteFileW(batch.c_str()); DeleteFileW(outfn.c_str());
-
+    // append to run log for debugging
     try {
         std::ofstream lof("wup_run_log.txt", std::ios::app | std::ios::binary);
         if (lof) {
+            std::string ncmd = WideToUtf8(cmd);
             lof << "--- CMD: " << ncmd << " ---\n";
-            lof << "Exit: " << (int)exitCode << "\n";
-            if (exitCode == (DWORD)-2) lof << "(TIMEOUT)\n";
+            lof << "Exit: " << result.first << "\n";
+            if (result.first == -2) lof << "(TIMEOUT)\n";
             lof << "Output:\n" << output << "\n\n";
         }
     } catch(...) {}
 
-    return { (int)exitCode, output };
+    result.second = output;
+    return result;
 }
 
 static std::string WideToUtf8(const std::wstring &w) {
@@ -1216,7 +1237,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 
         hCheckAll = CreateWindowExW(0, L"Button", t("select_all").c_str(), WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX, 10, 350, 120, 24, hwnd, (HMENU)IDC_CHECK_SELECTALL, NULL, NULL);
         // place Upgrade button 5px to the right of Select all
-        hBtnUpgrade = CreateWindowExW(0, L"Button", t("upgrade_now").c_str(), WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 135, 350, 140, 28, hwnd, (HMENU)IDC_BTN_UPGRADE, NULL, NULL);
+        hBtnUpgrade = CreateWindowExW(0, L"Button", t("upgrade_now").c_str(), WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 135, 350, 220, 28, hwnd, (HMENU)IDC_BTN_UPGRADE, NULL, NULL);
+        // Paste button removed — app scans `winget` at startup and on Refresh
         // position Refresh where the Upgrade button used to be (bottom-right)
         hBtnRefresh = CreateWindowExW(0, L"Button", t("refresh").c_str(), WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 470, 350, 140, 28, hwnd, (HMENU)IDC_BTN_REFRESH, NULL, NULL);
         // record main window handle, initial timestamp and auto-refresh once UI is created (start async refresh)
@@ -1256,7 +1278,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
             } catch(...) {}
 
             if (listOut.empty()) {
-                auto rlist = RunProcessCaptureExitCode(L"cmd /C winget list", 1000);
+                auto rlist = RunProcessCaptureExitCode(L"winget list", 1000);
                 listOut = rlist.second;
                 if (!listOut.empty()) {
                     try { std::ofstream ofs("wup_winget_list_fallback.txt", std::ios::binary); if (ofs) ofs << listOut; } catch(...) {}
@@ -1264,46 +1286,19 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
             }
 
             // Run winget upgrade with a 2s timeout (fast). If it returns quickly, parse it; if it times out/empty, treat list candidates as NotApplicable.
-            auto rup = RunProcessCaptureExitCode(L"cmd /C winget upgrade --accept-source-agreements --accept-package-agreements", 2000);
+            auto rup = RunProcessCaptureExitCode(L"winget upgrade", 5000);
             std::string out = rup.second;
             bool timedOut = (rup.first == -2 || out.empty());
-            // If winget produced no output or timed out, try any recent captured raw output files
-            if (out.empty()) {
-                std::string recent = ReadMostRecentRawWinget();
-                if (!recent.empty()) {
-                    out = recent;
-                    timedOut = false; // treat as usable output
-                }
-            }
-
             if (!out.empty()) {
-                bool sawNotApplicable = (out.find("A newer package version is available in a configured source, but it does not apply to your system or requirements") != std::string::npos) || (out.find("No applicable upgrade found") != std::string::npos);
+                // Prefer the in-memory parser chain to extract Id/Name pairs
+                auto vec = ParseRawWingetTextInMemory(out);
                 std::set<std::pair<std::string,std::string>> found;
-                if (!listOut.empty()) FindUpdatesUsingKnownList(listOut, out, found);
-                if (found.empty()) ParseUpgradeFast(out, found);
-
-                if (!found.empty()) {
-                    for (auto &p : found) results.emplace_back(p.first, p.second);
-                } else if (sawNotApplicable && !listOut.empty()) {
-                    // mark candidates as NotApplicable
-                    std::set<std::string> localNA;
-                    std::istringstream lss(listOut);
-                    std::string ln;
-                    std::regex anyRe("([\\S ]+?)\\s+([^\\s]+)\\s+(\\S+)\\s+(\\S+)");
-                    std::smatch m;
-                    while (std::getline(lss, ln)) {
-                        if (std::regex_search(ln, m, anyRe)) {
-                            std::string id = m[2].str();
-                            std::string installed = m[3].str();
-                            std::string available = m[4].str();
-                            try { if (CompareVersions(installed, available) < 0) localNA.insert(id); } catch(...) {}
-                        }
-                    }
-                    if (!localNA.empty()) {
-                        std::lock_guard<std::mutex> lk(g_packages_mutex);
-                        for (auto &s : localNA) g_not_applicable_ids.insert(s);
-                    }
+                for (auto &p : vec) found.emplace(p.first, p.second);
+                // fallback: if we still have nothing and have a cached list, try the list-based mapping
+                if (found.empty() && !listOut.empty()) {
+                    FindUpdatesUsingKnownList(listOut, out, found);
                 }
+                for (auto &p : found) results.emplace_back(p.first, p.second);
             }
 
             if (out.empty() || timedOut) {
@@ -1447,6 +1442,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                 // update window title but do not translate app name
                 std::wstring winTitle = std::wstring(L"WinUpdate - ") + t("app_window_suffix");
                 SetWindowTextW(hwnd, winTitle.c_str());
+                // Inform the user about the language change with an info icon
+                MessageBoxW(hwnd, t("lang_changed").c_str(), t("app_title").c_str(), MB_OK | MB_ICONINFORMATION);
             }
             break;
         }
@@ -1569,7 +1566,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     // attempt to load translations for the locale
     LoadLocaleFromFile(g_locale);
 
-    HWND hwnd = CreateWindowExW(0, CLASS_NAME, L"WinUpdate - winget GUI updater", WS_OVERLAPPEDWINDOW,
+    std::wstring winTitle = std::wstring(L"WinUpdate - ") + t("app_window_suffix");
+    HWND hwnd = CreateWindowExW(0, CLASS_NAME, winTitle.c_str(), WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT, 640, 430, NULL, NULL, hInstance, NULL);
     if (!hwnd) return 0;
     // load and set application icons (embedded in resources)
