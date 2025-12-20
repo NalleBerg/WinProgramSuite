@@ -128,6 +128,30 @@ WinUpdate/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\WinUpdate.dir\build.make CMakeFiles/WinUpdate.dir/build
 .PHONY : WinUpdate/fast
 
+src/About.obj: src/About.cpp.obj
+.PHONY : src/About.obj
+
+# target to build an object file
+src/About.cpp.obj:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\WinUpdate.dir\build.make CMakeFiles/WinUpdate.dir/src/About.cpp.obj
+.PHONY : src/About.cpp.obj
+
+src/About.i: src/About.cpp.i
+.PHONY : src/About.i
+
+# target to preprocess a source file
+src/About.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\WinUpdate.dir\build.make CMakeFiles/WinUpdate.dir/src/About.cpp.i
+.PHONY : src/About.cpp.i
+
+src/About.s: src/About.cpp.s
+.PHONY : src/About.s
+
+# target to generate assembly for a file
+src/About.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\WinUpdate.dir\build.make CMakeFiles/WinUpdate.dir/src/About.cpp.s
+.PHONY : src/About.cpp.s
+
 src/main.obj: src/main.cpp.obj
 .PHONY : src/main.obj
 
@@ -169,6 +193,9 @@ help:
 	@echo ... edit_cache
 	@echo ... rebuild_cache
 	@echo ... WinUpdate
+	@echo ... src/About.obj
+	@echo ... src/About.i
+	@echo ... src/About.s
 	@echo ... src/main.obj
 	@echo ... src/main.i
 	@echo ... src/main.s

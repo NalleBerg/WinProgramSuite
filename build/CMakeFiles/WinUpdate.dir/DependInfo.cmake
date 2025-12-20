@@ -22,6 +22,7 @@ set(CMAKE_RC_TARGET_INCLUDE_PATH
 
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
+  "C:/Users/nalle/Documents/C++/Workspace/WinUpdate/src/About.cpp" "CMakeFiles/WinUpdate.dir/src/About.cpp.obj" "gcc" "CMakeFiles/WinUpdate.dir/src/About.cpp.obj.d"
   "C:/Users/nalle/Documents/C++/Workspace/WinUpdate/src/main.cpp" "CMakeFiles/WinUpdate.dir/src/main.cpp.obj" "gcc" "CMakeFiles/WinUpdate.dir/src/main.cpp.obj.d"
   )
 

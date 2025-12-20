@@ -16,6 +16,7 @@
 #include <future>
 #include <unordered_set>
 #include <filesystem>
+#include "About.h"
 // detect nlohmann/json.hpp if available; fall back to ad-hoc parser otherwise
 #if defined(__has_include)
 #  if __has_include(<nlohmann/json.hpp>)
@@ -49,6 +50,7 @@ const wchar_t CLASS_NAME[] = L"WinUpdateClass";
 #define IDC_BTN_UPGRADE 2002
 #define IDC_BTN_DONE 2003
 #define IDC_CHECK_SKIPSELECTED 2004
+#define IDC_BTN_ABOUT 2005
 // IDC_BTN_PASTE removed: app will auto-scan winget at startup/refresh
 #define IDC_COMBO_LANG 3001
 
@@ -94,6 +96,9 @@ static HWND g_hLoadingDesc = NULL;
 static HWND g_hLoadingDots = NULL;
 static HFONT g_hDotsFont = NULL;
 static HWND g_hMainWindow = NULL;
+static HWND g_hInstallAnim = NULL;
+static HWND g_hInstallPanel = NULL;
+static int g_install_anim_state = 0;
 static int g_loading_anim_state = 0;
 static const UINT LOADING_TIMER_ID = 0xC0DE;
 static bool g_popupClassRegistered = false;
@@ -372,6 +377,27 @@ static std::string LoadLocaleSetting() {
 }
 
 static LRESULT CALLBACK PopupWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+static LRESULT CALLBACK AnimSubclassProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam,
+    UINT_PTR uIdSubclass, DWORD_PTR dwRefData);
+
+static void TryForceForegroundWindow(HWND hwnd) {
+    if (!hwnd || !IsWindow(hwnd)) return;
+    // Try common approaches to bring window to foreground
+    ::ShowWindow(hwnd, SW_RESTORE);
+    ::BringWindowToTop(hwnd);
+    ::SetForegroundWindow(hwnd);
+    ::SetActiveWindow(hwnd);
+    // Attach thread input to foreground thread as a fallback
+    DWORD fgThread = GetWindowThreadProcessId(GetForegroundWindow(), NULL);
+    DWORD thisThread = GetCurrentThreadId();
+    if (fgThread != 0 && fgThread != thisThread) {
+        AttachThreadInput(thisThread, fgThread, TRUE);
+        BringWindowToTop(hwnd);
+        SetForegroundWindow(hwnd);
+        SetActiveWindow(hwnd);
+        AttachThreadInput(thisThread, fgThread, FALSE);
+    }
+}
 // subclass procedure for custom-drawn dots control
 static LRESULT CALLBACK DotsSubclassProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam,
     UINT_PTR uIdSubclass, DWORD_PTR dwRefData) {
@@ -555,6 +581,46 @@ static LRESULT CALLBACK PopupWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
         return DefWindowProcW(hwnd, uMsg, wParam, lParam);
     }
     return DefWindowProcW(hwnd, uMsg, wParam, lParam);
+}
+static LRESULT CALLBACK AnimSubclassProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam,
+    UINT_PTR uIdSubclass, DWORD_PTR dwRefData) {
+    switch (uMsg) {
+    case WM_TIMER: {
+        g_install_anim_state++;
+        InvalidateRect(hwnd, NULL, TRUE);
+        return 0;
+    }
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hwnd, &ps);
+        RECT rc; GetClientRect(hwnd, &rc);
+        // clear background
+        HBRUSH hbr = GetSysColorBrush(COLOR_BTNFACE);
+        FillRect(hdc, &rc, hbr);
+        int w = rc.right - rc.left;
+        int h = rc.bottom - rc.top;
+        int dots = 5;
+        int dotW = std::max(6, h - 6);
+        int spacing = std::max(8, (w - dots * dotW) / (dots + 1));
+        int totalCycle = spacing + dotW;
+        int offset = (g_install_anim_state % (w + totalCycle));
+        HBRUSH fill = CreateSolidBrush(RGB(0, 102, 204));
+        HBRUSH old = (HBRUSH)SelectObject(hdc, fill);
+        for (int i = 0; i < dots; ++i) {
+            int x = (offset + i * (dotW + spacing)) % (w - dotW);
+            RECT r = { rc.left + x, rc.top + 2, rc.left + x + dotW, rc.top + 2 + dotW };
+            RoundRect(hdc, r.left, r.top, r.right, r.bottom, 4, 4);
+        }
+        SelectObject(hdc, old);
+        DeleteObject(fill);
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
+    case WM_NCDESTROY:
+        RemoveWindowSubclass(hwnd, AnimSubclassProc, uIdSubclass);
+        break;
+    }
+    return DefSubclassProc(hwnd, uMsg, wParam, lParam);
 }
 
 
@@ -1455,11 +1521,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
         g_hTitleFont = CreateFontW(lfTitleHeight, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, NONANTIALIASED_QUALITY,
             DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
-        g_hTitle = CreateWindowExW(0, L"Static", L"WinUpdate", WS_CHILD | WS_VISIBLE | SS_CENTER, 10, 10, 600, 28, hwnd, NULL, NULL, NULL);
+        // Title moved right to make space for left-aligned language combo
+        g_hTitle = CreateWindowExW(0, L"Static", L"WinUpdate", WS_CHILD | WS_VISIBLE | SS_CENTER, 80, 10, 530, 28, hwnd, NULL, NULL, NULL);
         if (g_hTitle && g_hTitleFont) SendMessageW(g_hTitle, WM_SETFONT, (WPARAM)g_hTitleFont, TRUE);
 
-        // language selection combobox (top-right)
-        HWND hComboLang = CreateWindowExW(0, WC_COMBOBOXW, NULL, WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_TABSTOP, 470, 10, 150, 200, hwnd, (HMENU)IDC_COMBO_LANG, NULL, NULL);
+        // language selection combobox (top-left)
+        HWND hComboLang = CreateWindowExW(0, WC_COMBOBOXW, NULL, WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_TABSTOP, 10, 10, 150, 200, hwnd, (HMENU)IDC_COMBO_LANG, NULL, NULL);
         if (hComboLang) {
             SendMessageW(hComboLang, CB_ADDSTRING, 0, (LPARAM)L"English (en)");
             SendMessageW(hComboLang, CB_ADDSTRING, 0, (LPARAM)L"Norsk (no)");
@@ -1507,6 +1574,30 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
         // Paste button removed — app scans `winget` at startup and on Refresh
         // position Refresh where the Upgrade button used to be (bottom-right)
         hBtnRefresh = CreateWindowExW(0, L"Button", t("refresh").c_str(), WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 470, 350, 140, 28, hwnd, (HMENU)IDC_BTN_REFRESH, NULL, NULL);
+
+        // About button at top-right (owner-draw so we can color on hover/press)
+        HWND hBtnAbout = CreateWindowExW(0, L"Button", L"About", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW | WS_TABSTOP, 470, 10, 120, 28, hwnd, (HMENU)IDC_BTN_ABOUT, NULL, NULL);
+        if (hBtnAbout) {
+            // subclass to track mouse hover/leave and store state in GWLP_USERDATA
+            SetWindowSubclass(hBtnAbout, [](HWND h, UINT msg, WPARAM wp, LPARAM lp, UINT_PTR, DWORD_PTR)->LRESULT {
+                switch (msg) {
+                case WM_MOUSEMOVE: {
+                    // set hover flag
+                    SetWindowLongPtrW(h, GWLP_USERDATA, 1);
+                    // request redraw of parent so WM_DRAWITEM runs
+                    InvalidateRect(h, NULL, TRUE);
+                    TRACKMOUSEEVENT tme{}; tme.cbSize = sizeof(tme); tme.dwFlags = TME_LEAVE; tme.hwndTrack = h; TrackMouseEvent(&tme);
+                    break;
+                }
+                case WM_MOUSELEAVE: {
+                    SetWindowLongPtrW(h, GWLP_USERDATA, 0);
+                    InvalidateRect(h, NULL, TRUE);
+                    break;
+                }
+                }
+                return DefSubclassProc(h, msg, wp, lp);
+            }, 0, 0);
+        }
         // record main window handle, initial timestamp and auto-refresh once UI is created (start async refresh)
         g_hMainWindow = hwnd;
         // clean up any stale install temp files from previous runs
@@ -1517,13 +1608,15 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
         break;
     }
     case WM_REFRESH_ASYNC: {
+        // wParam: non-zero = manual refresh (user requested). Use this to suppress automatic popups on startup.
+        bool manual = (wParam != 0);
         // start background thread to perform winget query + parsing
         // disable Refresh button while running
         g_refresh_in_progress.store(true);
         if (hBtnRefresh) EnableWindow(hBtnRefresh, FALSE);
         if (hBtnUpgrade) EnableWindow(hBtnUpgrade, FALSE);
         ShowLoading(hwnd);
-        std::thread([hwnd]() {
+        std::thread([hwnd, manual]() {
             std::vector<std::pair<std::string,std::string>> results;
 
             // Fast-path: prefer a cached `winget list` and run `winget upgrade` with a short timeout.
@@ -1557,7 +1650,15 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
             // Run winget upgrade with a 2s timeout (fast). If it returns quickly, parse it; if it times out/empty, treat list candidates as NotApplicable.
             auto rup = RunProcessCaptureExitCode(L"winget upgrade", 5000);
             std::string out = rup.second;
-            bool timedOut = (rup.first == -2 || out.empty());
+            bool timedOut = (rup.first == -2);
+            // If initial fast attempt timed out or returned empty, try a longer attempt once
+            if (timedOut || out.empty()) {
+                auto rup2 = RunProcessCaptureExitCode(L"winget upgrade", 15000);
+                if (!rup2.second.empty()) {
+                    out = rup2.second;
+                    timedOut = false;
+                }
+            }
             if (!out.empty()) {
                 // Prefer the in-memory parser chain to extract Id/Name pairs
                 auto vec = ParseRawWingetTextInMemory(out);
@@ -1600,16 +1701,19 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                         g_not_applicable_ids = localNA;
                     }
                 }
-                // If winget upgrade returned empty or timed out, remove stale fallback list to avoid showing stale results next run
-                try {
-                    namespace fs = std::filesystem;
-                    fs::path listPath = fs::current_path() / "wup_winget_list_fallback.txt";
-                    if (fs::exists(listPath)) fs::remove(listPath);
-                } catch(...) {}
+                // If winget upgrade returned empty and did NOT simply time out, remove stale fallback list
+                // If it timed out, keep the fallback list so the UI can present candidates instead of claiming up-to-date.
+                if (!timedOut) {
+                    try {
+                        namespace fs = std::filesystem;
+                        fs::path listPath = fs::current_path() / "wup_winget_list_fallback.txt";
+                        if (fs::exists(listPath)) fs::remove(listPath);
+                    } catch(...) {}
+                }
             }
-
             auto *pv = new std::vector<std::pair<std::string,std::string>>(std::move(results));
-            PostMessageA(hwnd, WM_REFRESH_DONE, 0, (LPARAM)pv);
+            // propagate manual flag to the WM_REFRESH_DONE handler via wParam so UI can decide whether to show popups
+            PostMessageA(hwnd, WM_REFRESH_DONE, manual ? 1 : 0, (LPARAM)pv);
         }).detach();
         break;
     }
@@ -1640,8 +1744,11 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
         {
             std::lock_guard<std::mutex> lk(g_packages_mutex);
             if (g_packages.empty()) {
-                std::wstring msg = t("your_system_updated");
-                MessageBoxW(hwnd, msg.c_str(), L"WinUpdate", MB_OK | MB_ICONINFORMATION);
+                // Only show the 'up-to-date' popup if this was a manual refresh (user requested).
+                if (wParam) {
+                    std::wstring msg = t("your_system_updated");
+                    MessageBoxW(hwnd, msg.c_str(), L"WinUpdate", MB_OK | MB_ICONINFORMATION);
+                }
             }
         }
         // After refresh, prune skip config entries if versions advanced (use cached probe)
@@ -1698,15 +1805,61 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
         EnableWindow(GetDlgItem(hwnd, IDC_COMBO_LANG), TRUE);
         break;
     }
+    case WM_APP+6: {
+        // wParam: 1 = show anim, 0 = hide anim
+        HWND anim = g_hInstallAnim;
+        if (anim && IsWindow(anim)) {
+            if (wParam) ShowWindow(anim, SW_SHOW);
+            else ShowWindow(anim, SW_HIDE);
+        }
+        break;
+    }
+    case WM_APP+7: {
+        // Bring main window forward (sent from background thread after installs finish)
+        TryForceForegroundWindow(hwnd);
+        break;
+    }
+    case WM_DRAWITEM: {
+        LPDRAWITEMSTRUCT dis = (LPDRAWITEMSTRUCT)lParam;
+        if (!dis) break;
+        if (dis->CtlID == IDC_BTN_ABOUT) {
+            HWND hBtn = dis->hwndItem;
+            BOOL hover = (BOOL)GetWindowLongPtrW(hBtn, GWLP_USERDATA);
+            bool pressed = (dis->itemState & ODS_SELECTED) != 0;
+            HDC hdc = dis->hDC;
+            RECT rc = dis->rcItem;
+            // base dark-blue color and variations
+            COLORREF base = RGB(10,57,129);
+            COLORREF hoverCol = RGB(25,95,210);
+            COLORREF pressCol = RGB(6,34,80);
+            HBRUSH hBrush = CreateSolidBrush(pressed ? pressCol : (hover ? hoverCol : base));
+            FillRect(hdc, &rc, hBrush);
+            DeleteObject(hBrush);
+            // draw text
+            SetTextColor(hdc, RGB(255,255,255));
+            SetBkMode(hdc, TRANSPARENT);
+            HFONT hf = g_hLastUpdatedFont ? g_hLastUpdatedFont : (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+            HGDIOBJ oldf = SelectObject(hdc, hf);
+            DrawTextW(hdc, L"About", -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            SelectObject(hdc, oldf);
+            if (dis->itemState & ODS_FOCUS) DrawFocusRect(hdc, &rc);
+            return 0;
+        }
+        break;
+    }
     case WM_INSTALL_DONE: {
         HWND panel = (HWND)wParam;
         if (panel && IsWindow(panel)) {
-            // enable the Continue/Done button (which is parented to the main window)
-            HWND hDoneBtn = GetDlgItem(hwnd, IDC_BTN_DONE);
-            if (hDoneBtn) EnableWindow(hDoneBtn, TRUE);
+            // Only enable Done if this matches the current tracked install panel
+            if (g_hInstallPanel == panel) {
+                HWND hDoneBtn = GetDlgItem(hwnd, IDC_BTN_DONE);
+                if (hDoneBtn) EnableWindow(hDoneBtn, TRUE);
+            }
             // update the panel static status label if possible
             HWND hLabel = FindWindowExW(panel, NULL, L"Static", NULL);
             if (hLabel) SetWindowTextW(hLabel, t("your_system_updated").c_str());
+            // hide animation when finished
+            if (g_hInstallAnim) PostMessageW(hwnd, WM_APP+6, 0, 0);
             // NOTE: Do NOT re-enable or destroy main UI/panel here. Keep the install panel visible
             // until the user clicks Done so they can review all install output. Done handler will
             // re-enable controls and perform the refresh when the user is satisfied.
@@ -1839,12 +1992,15 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
         if (id == IDC_BTN_REFRESH) {
             // update timestamp and start async refresh
             UpdateLastUpdatedLabel(hwnd);
-            if (!g_refresh_in_progress.load()) PostMessageW(hwnd, WM_REFRESH_ASYNC, 0, 0);
+            if (!g_refresh_in_progress.load()) PostMessageW(hwnd, WM_REFRESH_ASYNC, 1, 0);
+            break;
+        } else if (id == IDC_BTN_ABOUT) {
+            ShowAboutDialog(hwnd);
             break;
         } else if (id == IDC_BTN_DONE) {
             // User clicked Done on the install panel: delete temp file, re-enable UI, refresh and close panel
-            // delete last install file if present
-            try { if (!g_last_install_outfile.empty()) DeleteFileW(g_last_install_outfile.c_str()); } catch(...) {}
+            // delete last install file if present (worker intentionally left it until user acknowledged)
+            try { if (!g_last_install_outfile.empty()) { DeleteFileW(g_last_install_outfile.c_str()); g_last_install_outfile.clear(); } } catch(...) {}
             // Re-enable main UI controls now that user dismissed the install panel
             if (hList) EnableWindow(hList, TRUE);
             if (hBtnRefresh) EnableWindow(hBtnRefresh, TRUE);
@@ -1852,10 +2008,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
             EnableWindow(GetDlgItem(hwnd, IDC_CHECK_SELECTALL), TRUE);
             EnableWindow(GetDlgItem(hwnd, IDC_COMBO_LANG), TRUE);
             // trigger refresh (user requested) and then close panel
-            if (!g_refresh_in_progress.load()) PostMessageW(hwnd, WM_REFRESH_ASYNC, 0, 0);
-            // find any existing install panel (static at list area) and destroy
-            HWND panel = FindWindowExW(hwnd, NULL, L"Static", NULL);
-            if (panel) DestroyWindow(panel);
+            if (!g_refresh_in_progress.load()) PostMessageW(hwnd, WM_REFRESH_ASYNC, 1, 0);
+            // destroy the tracked install panel only
+            if (g_hInstallPanel && IsWindow(g_hInstallPanel)) {
+                DestroyWindow(g_hInstallPanel);
+                g_hInstallPanel = NULL;
+            }
             break;
         } else if (id == IDC_CHECK_SELECTALL) {
             // Toggle check state for all list items when Select all checkbox is toggled
@@ -1906,7 +2064,14 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
             HINSTANCE hInst = GetModuleHandleW(NULL);
             const int IW = 600, IH = 284;
             // list view area originally at (10,60,600,284)
+            // If a previous install panel exists (leftover), destroy it first
+            if (g_hInstallPanel && IsWindow(g_hInstallPanel)) {
+                DestroyWindow(g_hInstallPanel);
+                g_hInstallPanel = NULL;
+            }
             HWND hInstallPanel = CreateWindowExW(0, L"STATIC", NULL, WS_CHILD | WS_VISIBLE | SS_LEFT, 10, 60, IW, IH, hwnd, NULL, hInst, NULL);
+            // remember panel handle globally so Done handler can target it specifically
+            g_hInstallPanel = hInstallPanel;
             INITCOMMONCONTROLSEX icce{ sizeof(icce), ICC_PROGRESS_CLASS };
             InitCommonControlsEx(&icce);
             // status label just under title area (parent = panel)
@@ -1915,15 +2080,29 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
             HWND hProg = CreateWindowExW(0, PROGRESS_CLASSW, NULL, WS_CHILD | WS_VISIBLE, 12, 28, IW-36, 20, hInstallPanel, NULL, hInst, NULL);
             SendMessageW(hProg, PBM_SETRANGE, 0, MAKELPARAM(0, (int)toInstall.size()));
             SendMessageW(hProg, PBM_SETPOS, 0, 0);
+            // animation overlay control (drawn over the progress bar)
+            // Use transparent extended style so the progress bar remains visible underneath
+            HWND hAnim = CreateWindowExW(WS_EX_TRANSPARENT, L"STATIC", NULL, WS_CHILD | WS_VISIBLE, 12, 28, IW-36, 20, hInstallPanel, NULL, hInst, NULL);
+            if (hAnim) {
+                g_hInstallAnim = hAnim;
+                SetWindowSubclass(hAnim, AnimSubclassProc, 0, 0);
+                // timer at 300ms for smooth, subtle motion
+                SetTimer(hAnim, 0xBEEF, 300, NULL);
+                // match font used by list for the output control so text looks consistent
+            }
             // output edit filling remaining area (parent = panel)
             HWND hOut = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", NULL, WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_READONLY | WS_VSCROLL | ES_AUTOVSCROLL,
                 12, 56, IW-36, IH-96, hInstallPanel, NULL, hInst, NULL);
+            // ensure output uses the same list font for better visual consistency
+            if (hOut && g_hListFont) SendMessageW(hOut, WM_SETFONT, (WPARAM)g_hListFont, TRUE);
             // Done button to allow user to close panel after reading output
             // Create Done/Continue button as a child of the main window so WM_COMMAND is routed
             // to the main WndProc (controls parented to the panel would send WM_COMMAND to the panel).
             int btnX = 10 + (IW - 110);
             int btnY = 60 + (IH - 28);
             HWND hDone = CreateWindowExW(0, L"Button", t("continue").c_str(), WS_CHILD | WS_VISIBLE | WS_DISABLED | BS_PUSHBUTTON, btnX, btnY, 96, 24, hwnd, (HMENU)IDC_BTN_DONE, hInst, NULL);
+            // use title font for the status label for clarity
+            if (hInstallStatus && g_hTitleFont) SendMessageW(hInstallStatus, WM_SETFONT, (WPARAM)g_hTitleFont, TRUE);
 
             // build a single cmd line that echos markers and runs all winget commands, writing to the temp file
             std::wstring seq = L"echo WUP_BEGIN > \"" + outFile + L"\" & ";
@@ -1955,13 +2134,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                 ShowWindow(GetDlgItem(hwnd, IDC_CHECK_SELECTALL), SW_SHOW);
                 ShowWindow(GetDlgItem(hwnd, IDC_BTN_REFRESH), SW_SHOW);
                 ShowWindow(GetDlgItem(hwnd, IDC_COMBO_LANG), SW_SHOW);
+                // remove the temp file we created since elevate failed
+                try { if (!outFile.empty()) DeleteFileW(outFile.c_str()); } catch(...) {}
             } else {
                 // After launching elevated process, ensure our main window is visible and foregrounded
                 // so the UI (install panel) is not lost behind other windows when UAC finishes.
-                ShowWindow(hwnd, SW_RESTORE);
-                BringWindowToTop(hwnd);
-                SetActiveWindow(hwnd);
-                SetForegroundWindow(hwnd);
+                TryForceForegroundWindow(hwnd);
                 // monitor temp file and process in background thread
                 HANDLE hProc = sei.hProcess;
                 std::wstring outFileCopy = outFile; // capture
@@ -1972,6 +2150,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                 HWND hStatusCopy = hInstallStatus;
                 std::thread([hProc, outFileCopy, hPanelCopy, hStatusCopy, hProg, hOut, hwnd, totalCount]() mutable {
                     size_t installedCount = 0;
+                    bool usingMbProgress = false;
+                    std::unordered_set<std::string> seenBeginIds;
+                    std::string currentPackageId;
+                    std::string lastStatus;
                     const DWORD bufSize = 4096;
                     std::vector<char> buffer(bufSize);
                     std::string acc;
@@ -1997,15 +2179,59 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                                     if (ReadFile(hFile, buffer.data(), (DWORD)buffer.size(), &read, NULL) && read > 0) {
                                         lastPos.QuadPart += read;
                                         std::string chunk(buffer.data(), buffer.data() + read);
-                                        // append chunk to the edit control without replacing whole text
-                                        std::wstring wchunk = Utf8ToWide(chunk);
-                                        int curLen = GetWindowTextLengthW(hOut);
-                                        SendMessageW(hOut, EM_SETSEL, (WPARAM)curLen, (LPARAM)curLen);
-                                        SendMessageW(hOut, EM_REPLACESEL, FALSE, (LPARAM)wchunk.c_str());
-                                        SendMessageW(hOut, EM_SCROLLCARET, 0, 0);
-                                        // also append into acc for marker detection
+                                        // always append raw chunk to acc for marker detection and raw log
                                         acc.append(chunk);
-                                        // detect begin markers to update status "Installing update x of y"
+                                        // Filter noisy lines (ASCII spinners, repeated progress blocks). Handle MB progress lines specially.
+                                        std::string visible;
+                                        try {
+                                            static const std::regex spinnerRe(R"(^[\s\-\\\|\/\._\(\)\[\]│█▓▒]+$)");
+                                            static const std::regex blockBarRe(R"([█▓▒]{8,})");
+                                            static const std::regex mbRe(R"((\d+)\s*(MB|MiB)\s*/\s*(\d+)\s*(MB|MiB))", std::regex::icase);
+                                            std::istringstream ls(chunk);
+                                            std::string line;
+                                            while (std::getline(ls, line)) {
+                                                // trim
+                                                auto ltrim = [](std::string &s){ while(!s.empty() && (s.front()==' '||s.front()=='\t' || s.front()=='\r')) s.erase(s.begin()); };
+                                                auto rtrim = [](std::string &s){ while(!s.empty() && (s.back()==' '||s.back()=='\t' || s.back()=='\r' || s.back()=='\n')) s.pop_back(); };
+                                                ltrim(line); rtrim(line);
+                                                if (line.empty()) continue;
+                                                // preserve marker and result lines
+                                                if (line.rfind("===BEGIN===", 0) == 0) { visible += line + "\r\n"; continue; }
+                                                if (line.rfind("INSTALLED:", 0) == 0 || line.rfind("FAILED:", 0) == 0) { visible += line + "\r\n"; continue; }
+                                                // suppress spinner-only or large block bars
+                                                if (std::regex_match(line, spinnerRe)) continue;
+                                                if (std::regex_search(line, blockBarRe)) continue;
+                                                // detect MB progress lines to update progress bar
+                                                std::smatch mm;
+                                                if (std::regex_search(line, mm, mbRe)) {
+                                                                                        try {
+                                                                                            int cur = std::stoi(mm[1].str());
+                                                                                            int tot = std::stoi(mm[3].str());
+                                                                                            if (tot > 0) {
+                                                                                                int pct = (int)std::min(100.0, (cur / (double)tot) * 100.0);
+                                                                                                // switch progress bar to percent mode (0..100)
+                                                                                                SendMessageW(hProg, PBM_SETMARQUEE, FALSE, 0);
+                                                                                                SendMessageW(hProg, PBM_SETRANGE, 0, MAKELPARAM(0, 100));
+                                                                                                SendMessageW(hProg, PBM_SETPOS, (WPARAM)pct, 0);
+                                                                                                usingMbProgress = true;
+                                                                                                // hide animation while showing MB progress
+                                                                                                if (g_hInstallAnim) PostMessageW(hwnd, WM_APP+6, 0, 0);
+                                                                                            }
+                                                                                        } catch(...) {}
+                                                    continue;
+                                                }
+                                                // otherwise append visible
+                                                visible += line + "\r\n";
+                                            }
+                                        } catch(...) {}
+                                        if (!visible.empty()) {
+                                            std::wstring wchunk = Utf8ToWide(visible);
+                                            int curLen = GetWindowTextLengthW(hOut);
+                                            SendMessageW(hOut, EM_SETSEL, (WPARAM)curLen, (LPARAM)curLen);
+                                            SendMessageW(hOut, EM_REPLACESEL, FALSE, (LPARAM)wchunk.c_str());
+                                            SendMessageW(hOut, EM_SCROLLCARET, 0, 0);
+                                        }
+                                        // detect begin markers to update status "Installing X of Y" and avoid double-counting
                                         size_t posb = 0;
                                         while (true) {
                                             size_t p = acc.find("===BEGIN===", posb);
@@ -2013,12 +2239,23 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                                             size_t start = p + strlen("===BEGIN===");
                                             size_t eol = acc.find_first_of("\r\n", start);
                                             std::string id = (eol==std::string::npos) ? acc.substr(start) : acc.substr(start, eol - start);
-                                            // increment current index and update status label
-                                            currentIdx++;
-                                            wchar_t sBuf[512];
-                                            std::wstring wId = Utf8ToWide(id);
-                                            swprintf(sBuf, _countof(sBuf), L"Installing update %d of %d: %s", currentIdx, totalCount, wId.c_str());
-                                            SetWindowTextW(hStatusCopy, sBuf);
+                                            // trim id
+                                            auto trim = [](std::string &s){ while(!s.empty() && (s.back()=='\r' || s.back()=='\n')) s.pop_back(); while(!s.empty() && isspace((unsigned char)s.front())) s.erase(s.begin()); while(!s.empty() && isspace((unsigned char)s.back())) s.pop_back(); };
+                                            trim(id);
+                                            if (!id.empty() && seenBeginIds.find(id) == seenBeginIds.end()) {
+                                                seenBeginIds.insert(id);
+                                                currentIdx = (int)seenBeginIds.size();
+                                                currentPackageId = id;
+                                                // build concise status: Installing X/Y: id
+                                                wchar_t sBuf[512];
+                                                std::wstring wId = Utf8ToWide(id);
+                                                swprintf(sBuf, _countof(sBuf), L"Installing %d of %d: %s", currentIdx, totalCount, wId.c_str());
+                                                lastStatus = WideToUtf8(std::wstring(sBuf));
+                                                SetWindowTextW(hStatusCopy, sBuf);
+                                                // set progress bar to marquee and ensure animation is visible when starting install
+                                                SendMessageW(hProg, PBM_SETMARQUEE, TRUE, 300);
+                                                if (g_hInstallAnim) PostMessageW(hwnd, WM_APP+6, 1, 0);
+                                            }
                                             posb = (eol==std::string::npos) ? acc.size() : eol + 1;
                                         }
                                         // look for INSTALLED markers in acc
@@ -2027,7 +2264,19 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                                             size_t p = acc.find("INSTALLED:", pos);
                                             if (p == std::string::npos) break;
                                             installedCount++;
-                                            SendMessageW(hProg, PBM_SETPOS, (WPARAM)installedCount, 0);
+                                            if (usingMbProgress) {
+                                                // map overall installed count to percent
+                                                int pct = (int)((installedCount * 100) / (std::max(1, totalCount)));
+                                                SendMessageW(hProg, PBM_SETPOS, (WPARAM)pct, 0);
+                                                // restore overall-count range
+                                                SendMessageW(hProg, PBM_SETRANGE, 0, MAKELPARAM(0, totalCount));
+                                                usingMbProgress = false;
+                                                // restore marquee and show animation again
+                                                SendMessageW(hProg, PBM_SETMARQUEE, TRUE, 300);
+                                                if (g_hInstallAnim) PostMessageW(hwnd, WM_APP+6, 1, 0);
+                                            } else {
+                                                SendMessageW(hProg, PBM_SETPOS, (WPARAM)installedCount, 0);
+                                            }
                                             pos = p + 10;
                                         }
                                         // keep a little tail in case markers are split across reads
@@ -2059,6 +2308,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                     try { /* keep file until user presses Done */ } catch(...) {}
                     // Notify UI that install finished and allow user to click Done
                     PostMessageW(hwnd, WM_INSTALL_DONE, (WPARAM)hPanelCopy, 0);
+                    // Ensure the app comes forward after the elevated process finished
+                    PostMessageW(hwnd, WM_APP+7, 0, 0);
                 }).detach();
             }
         }
@@ -2072,6 +2323,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
         if (g_hTitleFont) {
             DeleteObject(g_hTitleFont);
             g_hTitleFont = NULL;
+        }
+        if (g_hInstallPanel && IsWindow(g_hInstallPanel)) {
+            DestroyWindow(g_hInstallPanel);
+            g_hInstallPanel = NULL;
         }
         PostQuitMessage(0);
         return 0;
