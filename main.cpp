@@ -1,7 +1,7 @@
 #include <windows.h>
 #include <commctrl.h>
 #include <shellapi.h>
-#include "../resource.h"
+#include "resource.h"
 #include <string>
 #include <vector>
 #include <sstream>
@@ -17,6 +17,7 @@
 #include <unordered_set>
 #include <filesystem>
 #include "About.h"
+#include "logging.h"
 // detect nlohmann/json.hpp if available; fall back to ad-hoc parser otherwise
 #if defined(__has_include)
 #  if __has_include(<nlohmann/json.hpp>)
@@ -100,19 +101,6 @@ static HWND g_hInstallAnim = NULL;
 static HWND g_hInstallPanel = NULL;
 static int g_install_anim_state = 0;
 static std::atomic<bool> g_install_block_destroy{false};
-// Enable or disable runtime logging to `wup_run_log.txt`.
-static std::atomic<bool> g_enable_logging{true};
-// If true, restart the application when the user clicks Continue (Done) after installs.
-static std::atomic<bool> g_restart_on_continue{true};
-
-// Append a line to the run log if logging is enabled. Swallows errors to be safe in UI threads.
-static void AppendLog(const std::string &s) {
-    if (!g_enable_logging.load()) return;
-    try {
-        std::ofstream ofs("wup_run_log.txt", std::ios::app | std::ios::binary);
-        if (ofs) ofs << s;
-    } catch(...) {}
-}
 static int g_loading_anim_state = 0;
 static const UINT LOADING_TIMER_ID = 0xC0DE;
 static bool g_popupClassRegistered = false;
@@ -1419,6 +1407,19 @@ static void ParseWingetTextForPackages(const std::string &text) {
     }
 
 static void PopulateListView(HWND hList) {
+    // Preserve current check state per-package (by id) so user selections survive refreshes
+    std::unordered_map<std::string, bool> preservedChecks;
+    int oldCount = ListView_GetItemCount(hList);
+    for (int i = 0; i < oldCount; ++i) {
+        BOOL checked = ListView_GetCheckState(hList, i);
+        LVITEMW lvi{}; lvi.mask = LVIF_PARAM; lvi.iItem = i; lvi.iSubItem = 0;
+        if (SendMessageW(hList, LVM_GETITEMW, 0, (LPARAM)&lvi)) {
+            int idx = (int)lvi.lParam;
+            if (idx >= 0 && idx < (int)g_packages.size()) {
+                preservedChecks[g_packages[idx].first] = (checked != 0);
+            }
+        }
+    }
     ListView_DeleteAllItems(hList);
     LVITEMW lvi{};
     lvi.mask = LVIF_TEXT | LVIF_PARAM;
@@ -1435,6 +1436,22 @@ static void PopulateListView(HWND hList) {
         lvi.pszText = (LPWSTR)wname.c_str();
         lvi.lParam = i;
         SendMessageW(hList, LVM_INSERTITEMW, 0, (LPARAM)&lvi);
+        // restore preserved check for this package id if present and not skipped/not-applicable
+        bool shouldCheck = false;
+        auto itc = preservedChecks.find(id);
+        if (itc != preservedChecks.end()) shouldCheck = itc->second;
+        bool skip = false;
+        {
+            std::lock_guard<std::mutex> lk(g_packages_mutex);
+            skip = (g_skipped_versions.find(id) != g_skipped_versions.end());
+        }
+        bool notapp = false;
+        if (i >= 0 && i < (int)g_packages.size()) {
+            std::string _idchk = g_packages[i].first;
+            std::lock_guard<std::mutex> _lk(g_packages_mutex);
+            notapp = (g_not_applicable_ids.find(_idchk) != g_not_applicable_ids.end());
+        }
+        if (!skip && !notapp && shouldCheck) ListView_SetCheckState(hList, i, TRUE);
         LVITEMW lvi2{};
         lvi2.mask = LVIF_TEXT;
         lvi2.iItem = i;
@@ -2555,6 +2572,16 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                     CloseHandle(hProc);
                     // delete the temp file now that process finished and file closed
                     try { /* keep file until user presses Done */ } catch(...) {}
+                    // append a visible separator so multiple installs are clearly separated in the output
+                    try {
+                        if (hOut) {
+                            std::wstring sep = L"\r\n----------------------------------------\r\n\r\n";
+                            int curLen3 = GetWindowTextLengthW(hOut);
+                            SendMessageW(hOut, EM_SETSEL, (WPARAM)curLen3, (LPARAM)curLen3);
+                            SendMessageW(hOut, EM_REPLACESEL, FALSE, (LPARAM)sep.c_str());
+                            SendMessageW(hOut, EM_SCROLLCARET, 0, 0);
+                        }
+                    } catch(...) {}
                     // Notify UI that install finished and allow user to click Done
                     PostMessageW(hwnd, WM_INSTALL_DONE, (WPARAM)hPanelCopy, 0);
                     // Ensure the app comes forward after the elevated process finished

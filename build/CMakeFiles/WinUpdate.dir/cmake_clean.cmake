@@ -1,8 +1,10 @@
 file(REMOVE_RECURSE
+  "CMakeFiles/WinUpdate.dir/main.cpp.obj"
+  "CMakeFiles/WinUpdate.dir/main.cpp.obj.d"
   "CMakeFiles/WinUpdate.dir/src/About.cpp.obj"
   "CMakeFiles/WinUpdate.dir/src/About.cpp.obj.d"
-  "CMakeFiles/WinUpdate.dir/src/main.cpp.obj"
-  "CMakeFiles/WinUpdate.dir/src/main.cpp.obj.d"
+  "CMakeFiles/WinUpdate.dir/src/logging.cpp.obj"
+  "CMakeFiles/WinUpdate.dir/src/logging.cpp.obj.d"
   "CMakeFiles/WinUpdate.dir/winupdate.rc.obj"
   "WinUpdate.exe"
   "WinUpdate.exe.manifest"

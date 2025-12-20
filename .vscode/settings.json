@@ -1,0 +1,4 @@
+{
+  // Allow tasks to be run automatically without prompting the user
+  "task.allowAutomaticTasks": "always"
+}

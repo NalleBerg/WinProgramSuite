@@ -5,13 +5,13 @@
 # compile RC with C:/mingw64/bin/windres.exe
 CXX_DEFINES = -DWIN32_LEAN_AND_MEAN
 
-CXX_INCLUDES = 
+CXX_INCLUDES = @CMakeFiles/WinUpdate.dir/includes_CXX.rsp
 
 CXX_FLAGS = -O3 -DNDEBUG -std=gnu++17
 
 RC_DEFINES = -DWIN32_LEAN_AND_MEAN
 
-RC_INCLUDES = 
+RC_INCLUDES = -I C:\Users\nalle\Documents\C++\Workspace\WinUpdate\src
 
 RC_FLAGS = 
 
