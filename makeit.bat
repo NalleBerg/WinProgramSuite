@@ -50,4 +50,27 @@ if errorlevel 1 (
 )
 
 echo Build completed.
+echo Packaging WinUpdate directory...
+set "PACKAGE_DIR=WinUpdate"
+if exist "%PACKAGE_DIR%" (
+    echo Removing existing %PACKAGE_DIR% directory...
+    attrib -r -s -h "%PACKAGE_DIR%"\*.* /s >nul 2>&1
+    rmdir /s /q "%PACKAGE_DIR%"
+)
+mkdir "%PACKAGE_DIR%"
+REM copy runtime folders if present
+robocopy i18n "%PACKAGE_DIR%\i18n" /E >nul 2>&1
+robocopy img "%PACKAGE_DIR%\img" /E >nul 2>&1
+robocopy locale "%PACKAGE_DIR%\locale" /E >nul 2>&1
+robocopy assets "%PACKAGE_DIR%\assets" /E >nul 2>&1
+REM copy the built exe
+if exist "%BUILD_DIR%\WinUpdate.exe" (
+    copy /Y "%BUILD_DIR%\WinUpdate.exe" "%PACKAGE_DIR%\WinUpdate.exe" >nul 2>&1
+) else (
+    echo [WARN] Built exe not found: %BUILD_DIR%\WinUpdate.exe
+)
+if exist "wup_settings.txt" copy /Y "wup_settings.txt" "%PACKAGE_DIR%\wup_settings.txt" >nul 2>&1
+if exist "README.md" copy /Y "README.md" "%PACKAGE_DIR%\README.md" >nul 2>&1
+if exist "LICENSE.md" copy /Y "LICENSE.md" "%PACKAGE_DIR%\LICENSE.md" >nul 2>&1
+echo Packaged to %PACKAGE_DIR%.
 endlocal
