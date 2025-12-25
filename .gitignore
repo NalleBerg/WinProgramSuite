@@ -1,0 +1,12 @@
+# Ignore backups and logs created by the local tooling
+/backups/
+/logs/
+
+# Ignore build output
+/build/
+
+# Ignore user-specific files
+*.user
+*.suo
+wup_run_log.txt
+wup_winget_list_fallback.txt

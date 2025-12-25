@@ -128,6 +128,30 @@ WinUpdate/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\WinUpdate.dir\build.make CMakeFiles/WinUpdate.dir/build
 .PHONY : WinUpdate/fast
 
+main.obj: main.cpp.obj
+.PHONY : main.obj
+
+# target to build an object file
+main.cpp.obj:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\WinUpdate.dir\build.make CMakeFiles/WinUpdate.dir/main.cpp.obj
+.PHONY : main.cpp.obj
+
+main.i: main.cpp.i
+.PHONY : main.i
+
+# target to preprocess a source file
+main.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\WinUpdate.dir\build.make CMakeFiles/WinUpdate.dir/main.cpp.i
+.PHONY : main.cpp.i
+
+main.s: main.cpp.s
+.PHONY : main.s
+
+# target to generate assembly for a file
+main.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\WinUpdate.dir\build.make CMakeFiles/WinUpdate.dir/main.cpp.s
+.PHONY : main.cpp.s
+
 src/About.obj: src/About.cpp.obj
 .PHONY : src/About.obj
 
@@ -152,29 +176,29 @@ src/About.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles\WinUpdate.dir\build.make CMakeFiles/WinUpdate.dir/src/About.cpp.s
 .PHONY : src/About.cpp.s
 
-src/main.obj: src/main.cpp.obj
-.PHONY : src/main.obj
+src/logging.obj: src/logging.cpp.obj
+.PHONY : src/logging.obj
 
 # target to build an object file
-src/main.cpp.obj:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles\WinUpdate.dir\build.make CMakeFiles/WinUpdate.dir/src/main.cpp.obj
-.PHONY : src/main.cpp.obj
+src/logging.cpp.obj:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\WinUpdate.dir\build.make CMakeFiles/WinUpdate.dir/src/logging.cpp.obj
+.PHONY : src/logging.cpp.obj
 
-src/main.i: src/main.cpp.i
-.PHONY : src/main.i
+src/logging.i: src/logging.cpp.i
+.PHONY : src/logging.i
 
 # target to preprocess a source file
-src/main.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles\WinUpdate.dir\build.make CMakeFiles/WinUpdate.dir/src/main.cpp.i
-.PHONY : src/main.cpp.i
+src/logging.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\WinUpdate.dir\build.make CMakeFiles/WinUpdate.dir/src/logging.cpp.i
+.PHONY : src/logging.cpp.i
 
-src/main.s: src/main.cpp.s
-.PHONY : src/main.s
+src/logging.s: src/logging.cpp.s
+.PHONY : src/logging.s
 
 # target to generate assembly for a file
-src/main.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles\WinUpdate.dir\build.make CMakeFiles/WinUpdate.dir/src/main.cpp.s
-.PHONY : src/main.cpp.s
+src/logging.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles\WinUpdate.dir\build.make CMakeFiles/WinUpdate.dir/src/logging.cpp.s
+.PHONY : src/logging.cpp.s
 
 winupdate.obj: winupdate.rc.obj
 .PHONY : winupdate.obj
@@ -193,12 +217,15 @@ help:
 	@echo ... edit_cache
 	@echo ... rebuild_cache
 	@echo ... WinUpdate
+	@echo ... main.obj
+	@echo ... main.i
+	@echo ... main.s
 	@echo ... src/About.obj
 	@echo ... src/About.i
 	@echo ... src/About.s
-	@echo ... src/main.obj
-	@echo ... src/main.i
-	@echo ... src/main.s
+	@echo ... src/logging.obj
+	@echo ... src/logging.i
+	@echo ... src/logging.s
 	@echo ... winupdate.obj
 .PHONY : help
 

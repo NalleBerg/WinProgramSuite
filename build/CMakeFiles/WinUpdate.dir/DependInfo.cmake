@@ -18,12 +18,19 @@ set(CMAKE_TARGET_DEFINITIONS_RC
 
 # The include file search paths:
 set(CMAKE_RC_TARGET_INCLUDE_PATH
+  "C:/Users/nalle/Documents/C++/Workspace/WinUpdate/src"
   )
 
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
+<<<<<<< HEAD
   "C:/Users/NalleBerg/Documents/C++/Workspace/WinUpdate/src/About.cpp" "CMakeFiles/WinUpdate.dir/src/About.cpp.obj" "gcc" "CMakeFiles/WinUpdate.dir/src/About.cpp.obj.d"
   "C:/Users/NalleBerg/Documents/C++/Workspace/WinUpdate/src/main.cpp" "CMakeFiles/WinUpdate.dir/src/main.cpp.obj" "gcc" "CMakeFiles/WinUpdate.dir/src/main.cpp.obj.d"
+=======
+  "C:/Users/nalle/Documents/C++/Workspace/WinUpdate/main.cpp" "CMakeFiles/WinUpdate.dir/main.cpp.obj" "gcc" "CMakeFiles/WinUpdate.dir/main.cpp.obj.d"
+  "C:/Users/nalle/Documents/C++/Workspace/WinUpdate/src/About.cpp" "CMakeFiles/WinUpdate.dir/src/About.cpp.obj" "gcc" "CMakeFiles/WinUpdate.dir/src/About.cpp.obj.d"
+  "C:/Users/nalle/Documents/C++/Workspace/WinUpdate/src/logging.cpp" "CMakeFiles/WinUpdate.dir/src/logging.cpp.obj" "gcc" "CMakeFiles/WinUpdate.dir/src/logging.cpp.obj.d"
+>>>>>>> 56ee9a3f4c5f83f987979a87959200542c48b932
   )
 
 # Targets to which this target links which contain Fortran sources.

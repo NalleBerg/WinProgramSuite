@@ -71,6 +71,7 @@ include CMakeFiles/WinUpdate.dir/flags.make
 CMakeFiles/WinUpdate.dir/codegen:
 .PHONY : CMakeFiles/WinUpdate.dir/codegen
 
+<<<<<<< HEAD
 CMakeFiles/WinUpdate.dir/src/main.cpp.obj: CMakeFiles/WinUpdate.dir/flags.make
 CMakeFiles/WinUpdate.dir/src/main.cpp.obj: C:/Users/NalleBerg/Documents/C++/Workspace/WinUpdate/src/main.cpp
 CMakeFiles/WinUpdate.dir/src/main.cpp.obj: CMakeFiles/WinUpdate.dir/compiler_depend.ts
@@ -90,6 +91,44 @@ CMakeFiles/WinUpdate.dir/src/About.cpp.obj: C:/Users/NalleBerg/Documents/C++/Wor
 CMakeFiles/WinUpdate.dir/src/About.cpp.obj: CMakeFiles/WinUpdate.dir/compiler_depend.ts
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=C:\Users\NalleBerg\Documents\C++\Workspace\WinUpdate\build\CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/WinUpdate.dir/src/About.cpp.obj"
 	C:\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/WinUpdate.dir/src/About.cpp.obj -MF CMakeFiles\WinUpdate.dir\src\About.cpp.obj.d -o CMakeFiles\WinUpdate.dir\src\About.cpp.obj -c C:\Users\NalleBerg\Documents\C++\Workspace\WinUpdate\src\About.cpp
+=======
+CMakeFiles/WinUpdate.dir/main.cpp.obj: CMakeFiles/WinUpdate.dir/flags.make
+CMakeFiles/WinUpdate.dir/main.cpp.obj: CMakeFiles/WinUpdate.dir/includes_CXX.rsp
+CMakeFiles/WinUpdate.dir/main.cpp.obj: C:/Users/nalle/Documents/C++/Workspace/WinUpdate/main.cpp
+CMakeFiles/WinUpdate.dir/main.cpp.obj: CMakeFiles/WinUpdate.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=C:\Users\nalle\Documents\C++\Workspace\WinUpdate\build\CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/WinUpdate.dir/main.cpp.obj"
+	C:\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/WinUpdate.dir/main.cpp.obj -MF CMakeFiles\WinUpdate.dir\main.cpp.obj.d -o CMakeFiles\WinUpdate.dir\main.cpp.obj -c C:\Users\nalle\Documents\C++\Workspace\WinUpdate\main.cpp
+
+CMakeFiles/WinUpdate.dir/main.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/WinUpdate.dir/main.cpp.i"
+	C:\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E C:\Users\nalle\Documents\C++\Workspace\WinUpdate\main.cpp > CMakeFiles\WinUpdate.dir\main.cpp.i
+
+CMakeFiles/WinUpdate.dir/main.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/WinUpdate.dir/main.cpp.s"
+	C:\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S C:\Users\nalle\Documents\C++\Workspace\WinUpdate\main.cpp -o CMakeFiles\WinUpdate.dir\main.cpp.s
+
+CMakeFiles/WinUpdate.dir/src/logging.cpp.obj: CMakeFiles/WinUpdate.dir/flags.make
+CMakeFiles/WinUpdate.dir/src/logging.cpp.obj: CMakeFiles/WinUpdate.dir/includes_CXX.rsp
+CMakeFiles/WinUpdate.dir/src/logging.cpp.obj: C:/Users/nalle/Documents/C++/Workspace/WinUpdate/src/logging.cpp
+CMakeFiles/WinUpdate.dir/src/logging.cpp.obj: CMakeFiles/WinUpdate.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=C:\Users\nalle\Documents\C++\Workspace\WinUpdate\build\CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/WinUpdate.dir/src/logging.cpp.obj"
+	C:\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/WinUpdate.dir/src/logging.cpp.obj -MF CMakeFiles\WinUpdate.dir\src\logging.cpp.obj.d -o CMakeFiles\WinUpdate.dir\src\logging.cpp.obj -c C:\Users\nalle\Documents\C++\Workspace\WinUpdate\src\logging.cpp
+
+CMakeFiles/WinUpdate.dir/src/logging.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/WinUpdate.dir/src/logging.cpp.i"
+	C:\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E C:\Users\nalle\Documents\C++\Workspace\WinUpdate\src\logging.cpp > CMakeFiles\WinUpdate.dir\src\logging.cpp.i
+
+CMakeFiles/WinUpdate.dir/src/logging.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/WinUpdate.dir/src/logging.cpp.s"
+	C:\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S C:\Users\nalle\Documents\C++\Workspace\WinUpdate\src\logging.cpp -o CMakeFiles\WinUpdate.dir\src\logging.cpp.s
+
+CMakeFiles/WinUpdate.dir/src/About.cpp.obj: CMakeFiles/WinUpdate.dir/flags.make
+CMakeFiles/WinUpdate.dir/src/About.cpp.obj: CMakeFiles/WinUpdate.dir/includes_CXX.rsp
+CMakeFiles/WinUpdate.dir/src/About.cpp.obj: C:/Users/nalle/Documents/C++/Workspace/WinUpdate/src/About.cpp
+CMakeFiles/WinUpdate.dir/src/About.cpp.obj: CMakeFiles/WinUpdate.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=C:\Users\nalle\Documents\C++\Workspace\WinUpdate\build\CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/WinUpdate.dir/src/About.cpp.obj"
+	C:\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/WinUpdate.dir/src/About.cpp.obj -MF CMakeFiles\WinUpdate.dir\src\About.cpp.obj.d -o CMakeFiles\WinUpdate.dir\src\About.cpp.obj -c C:\Users\nalle\Documents\C++\Workspace\WinUpdate\src\About.cpp
+>>>>>>> 56ee9a3f4c5f83f987979a87959200542c48b932
 
 CMakeFiles/WinUpdate.dir/src/About.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/WinUpdate.dir/src/About.cpp.i"
@@ -100,27 +139,39 @@ CMakeFiles/WinUpdate.dir/src/About.cpp.s: cmake_force
 	C:\mingw64\bin\c++.exe $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S C:\Users\NalleBerg\Documents\C++\Workspace\WinUpdate\src\About.cpp -o CMakeFiles\WinUpdate.dir\src\About.cpp.s
 
 CMakeFiles/WinUpdate.dir/winupdate.rc.obj: CMakeFiles/WinUpdate.dir/flags.make
+<<<<<<< HEAD
 CMakeFiles/WinUpdate.dir/winupdate.rc.obj: C:/Users/NalleBerg/Documents/C++/Workspace/WinUpdate/winupdate.rc
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=C:\Users\NalleBerg\Documents\C++\Workspace\WinUpdate\build\CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building RC object CMakeFiles/WinUpdate.dir/winupdate.rc.obj"
 	C:\mingw64\bin\windres.exe -O coff $(RC_DEFINES) $(RC_INCLUDES) $(RC_FLAGS) C:\Users\NalleBerg\Documents\C++\Workspace\WinUpdate\winupdate.rc CMakeFiles\WinUpdate.dir\winupdate.rc.obj
+=======
+CMakeFiles/WinUpdate.dir/winupdate.rc.obj: C:/Users/nalle/Documents/C++/Workspace/WinUpdate/winupdate.rc
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=C:\Users\nalle\Documents\C++\Workspace\WinUpdate\build\CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building RC object CMakeFiles/WinUpdate.dir/winupdate.rc.obj"
+	C:\mingw64\bin\windres.exe -O coff $(RC_DEFINES) $(RC_INCLUDES) $(RC_FLAGS) C:\Users\nalle\Documents\C++\Workspace\WinUpdate\winupdate.rc CMakeFiles\WinUpdate.dir\winupdate.rc.obj
+>>>>>>> 56ee9a3f4c5f83f987979a87959200542c48b932
 
 # Object files for target WinUpdate
 WinUpdate_OBJECTS = \
-"CMakeFiles/WinUpdate.dir/src/main.cpp.obj" \
+"CMakeFiles/WinUpdate.dir/main.cpp.obj" \
+"CMakeFiles/WinUpdate.dir/src/logging.cpp.obj" \
 "CMakeFiles/WinUpdate.dir/src/About.cpp.obj" \
 "CMakeFiles/WinUpdate.dir/winupdate.rc.obj"
 
 # External object files for target WinUpdate
 WinUpdate_EXTERNAL_OBJECTS =
 
-WinUpdate.exe: CMakeFiles/WinUpdate.dir/src/main.cpp.obj
+WinUpdate.exe: CMakeFiles/WinUpdate.dir/main.cpp.obj
+WinUpdate.exe: CMakeFiles/WinUpdate.dir/src/logging.cpp.obj
 WinUpdate.exe: CMakeFiles/WinUpdate.dir/src/About.cpp.obj
 WinUpdate.exe: CMakeFiles/WinUpdate.dir/winupdate.rc.obj
 WinUpdate.exe: CMakeFiles/WinUpdate.dir/build.make
 WinUpdate.exe: CMakeFiles/WinUpdate.dir/linkLibs.rsp
 WinUpdate.exe: CMakeFiles/WinUpdate.dir/objects1.rsp
 WinUpdate.exe: CMakeFiles/WinUpdate.dir/link.txt
+<<<<<<< HEAD
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=C:\Users\NalleBerg\Documents\C++\Workspace\WinUpdate\build\CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Linking CXX executable WinUpdate.exe"
+=======
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=C:\Users\nalle\Documents\C++\Workspace\WinUpdate\build\CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Linking CXX executable WinUpdate.exe"
+>>>>>>> 56ee9a3f4c5f83f987979a87959200542c48b932
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles\WinUpdate.dir\link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.

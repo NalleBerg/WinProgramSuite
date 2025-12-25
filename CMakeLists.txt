@@ -5,7 +5,10 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
-set(SOURCES src/main.cpp)
+set(SOURCES main.cpp)
+if(EXISTS ${CMAKE_SOURCE_DIR}/src/logging.cpp)
+  list(APPEND SOURCES ${CMAKE_SOURCE_DIR}/src/logging.cpp)
+endif()
 if(EXISTS ${CMAKE_SOURCE_DIR}/src/About.cpp)
   list(APPEND SOURCES ${CMAKE_SOURCE_DIR}/src/About.cpp)
 endif()
@@ -14,6 +17,9 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/winupdate.rc)
 endif()
 
 add_executable(WinUpdate ${SOURCES})
+
+# Ensure headers in `src/` are found when building with root `main.cpp`
+target_include_directories(WinUpdate PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
 set_target_properties(WinUpdate PROPERTIES WIN32_EXECUTABLE TRUE)
 

@@ -7,7 +7,7 @@
 #include <sstream>
 
 // Set the published timestamp here. Update before publishing releases on the website.
-const wchar_t ABOUT_PUBLISHED[] = L"2025-12-19 00:00";
+const wchar_t ABOUT_PUBLISHED[] = L"2025-12-20 13:33:21";
 
 static std::wstring BuildAboutText()
 {
