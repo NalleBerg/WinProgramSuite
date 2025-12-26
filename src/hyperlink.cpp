@@ -78,13 +78,15 @@ static std::string LoadI18nValue(const std::string &locale, const std::string &k
 
 static bool g_tipClassRegistered = false;
 static const wchar_t *kTipClassName = L"HyperlinkCustomTip";
+static const int kTipPadX = 30;
+static const int kTipPadY = 12;
 
-static void EnsureTipClassRegistered() {
+    static void EnsureTipClassRegistered() {
     if (g_tipClassRegistered) return;
     WNDCLASSEXW wc{};
     wc.cbSize = sizeof(wc);
     wc.style = CS_HREDRAW | CS_NOCLOSE;
-    wc.lpfnWndProc = [](HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)->LRESULT {
+        wc.lpfnWndProc = [](HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)->LRESULT {
         switch (uMsg) {
         case WM_PAINT: {
             PAINTSTRUCT ps; HDC hdc = BeginPaint(hwnd, &ps);
@@ -95,12 +97,25 @@ static void EnsureTipClassRegistered() {
             DeleteObject(hbr);
             // border
             FrameRect(hdc, &rc, GetSysColorBrush(COLOR_WINDOWFRAME));
-            // draw text stored in window property
-            wchar_t buf[1024] = {0};
-            GetWindowTextW(hwnd, buf, _countof(buf));
+            // draw text stored in window property with inset padding so text isn't clipped
+            // retrieve window text dynamically to avoid truncation for long strings
+            int len = GetWindowTextLengthW(hwnd);
+            std::vector<wchar_t> buf(len + 1);
+            if (len > 0) GetWindowTextW(hwnd, buf.data(), len + 1);
+            else buf[0] = 0;
             SetTextColor(hdc, GetSysColor(COLOR_INFOTEXT));
             SetBkMode(hdc, TRANSPARENT);
-            DrawTextW(hdc, buf, -1, &rc, DT_LEFT | DT_WORDBREAK);
+            HFONT hf = (HFONT)SendMessageW(hwnd, WM_GETFONT, 0, 0);
+            HGDIOBJ oldf = NULL;
+            if (hf) oldf = SelectObject(hdc, hf);
+            RECT inner = rc;
+            // inset by symmetric padding on both sides so text isn't clipped
+            inner.left += kTipPadX;
+            inner.right -= kTipPadX;
+            inner.top += kTipPadY;
+            inner.bottom -= kTipPadY;
+            DrawTextW(hdc, buf.data(), -1, &inner, DT_LEFT | DT_SINGLELINE | DT_NOPREFIX | DT_VCENTER);
+            if (oldf) SelectObject(hdc, oldf);
             EndPaint(hwnd, &ps);
             return 0;
         }
@@ -134,6 +149,9 @@ static HWND EnsureTooltipForList(HWND hList) {
     g_tooltips[hList] = tip;
     g_tooltip_texts[hList] = L"";
     AppendLog("[hyperlink] Created custom tooltip popup\n");
+    // Use the list's font for the tip so measurement/painting match
+    HFONT lf = (HFONT)SendMessageW(hList, WM_GETFONT, 0, 0);
+    if (lf) SendMessageW(tip, WM_SETFONT, (WPARAM)lf, TRUE);
     return tip;
 }
 
@@ -255,18 +273,30 @@ static LRESULT CALLBACK Hyperlink_ListSubclassProc(HWND hwnd, UINT uMsg, WPARAM 
                 if (tip && IsWindow(tip)) {
                     // set text and size
                     SetWindowTextW(tip, g_tooltip_texts[hwnd].c_str());
-                    // measure via DrawText DT_CALCRECT
+                    // measure text precisely and apply symmetric padding on both sides
+                    const int padX = kTipPadX, padY = kTipPadY;
                     HDC hdc = GetDC(tip);
-                    RECT rc = {0,0,400,0};
-                    HFONT hf = (HFONT)SendMessageW(hwnd, WM_GETFONT, 0, 0);
-                    if (hf) SelectObject(hdc, hf);
-                    DrawTextW(hdc, g_tooltip_texts[hwnd].c_str(), -1, &rc, DT_LEFT | DT_WORDBREAK | DT_CALCRECT);
-                    int w = rc.right - rc.left + 12; int h = rc.bottom - rc.top + 8;
+                    HFONT hf = (HFONT)SendMessageW(tip, WM_GETFONT, 0, 0);
+                    HGDIOBJ oldf = NULL;
+                    if (hf) oldf = SelectObject(hdc, hf);
+                    RECT rcCalc = {0,0,0,0};
+                    // DT_CALCRECT with DT_SINGLELINE measures the required width/height
+                    DrawTextW(hdc, g_tooltip_texts[hwnd].c_str(), -1, &rcCalc, DT_LEFT | DT_SINGLELINE | DT_CALCRECT | DT_NOPREFIX);
+                    int naturalW = rcCalc.right - rcCalc.left;
+                    int naturalH = rcCalc.bottom - rcCalc.top;
+                    int w = naturalW + (padX * 2);
+                    int h = naturalH + (padY * 2);
+                    if (oldf) SelectObject(hdc, oldf);
                     ReleaseDC(tip, hdc);
                     POINT tl = { hitRect.left, hitRect.top }; POINT br = { hitRect.right, hitRect.bottom };
                     ClientToScreen(hwnd, &tl); ClientToScreen(hwnd, &br);
                     int tipX = (tl.x + br.x) / 2 - w/2;
                     int tipY = tl.y - h - 8; // place above
+                    // constrain to work area (prevent off-screen)
+                    RECT wa; SystemParametersInfoW(SPI_GETWORKAREA, 0, &wa, 0);
+                    if (tipX < wa.left) tipX = wa.left + 4;
+                    if (tipX + w > wa.right) tipX = wa.right - w - 4;
+                    if (tipY < wa.top) tipY = br.y + 8; // if no space above, show below
                     SetWindowPos(tip, HWND_TOPMOST, tipX, tipY, w, h, SWP_NOACTIVATE | SWP_SHOWWINDOW);
                     InvalidateRect(tip, NULL, TRUE);
                     AppendLog("[hyperlink] custom tooltip shown\n");
