@@ -2002,12 +2002,22 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 
             // Start background population of available/installed versions without blocking the initial scan.
             try {
-                auto avail = MapAvailableVersions();
-                auto inst = MapInstalledVersions();
+                // Run probes in parallel with per-call wait limits to reduce wall time
+                auto futAvail = std::async(std::launch::async, MapAvailableVersions);
+                auto futInst = std::async(std::launch::async, MapInstalledVersions);
+                std::unordered_map<std::string,std::string> avail;
+                std::unordered_map<std::string,std::string> inst;
+                auto perCallTimeout = std::chrono::milliseconds(5200);
+                if (futAvail.wait_for(perCallTimeout) == std::future_status::ready) {
+                    try { avail = futAvail.get(); } catch(...) {}
+                }
+                if (futInst.wait_for(perCallTimeout) == std::future_status::ready) {
+                    try { inst = futInst.get(); } catch(...) {}
+                }
                 {
                     std::lock_guard<std::mutex> lk(g_versions_mutex);
-                    g_last_avail_versions = avail;
-                    g_last_inst_versions = inst;
+                    if (!avail.empty()) g_last_avail_versions = avail;
+                    if (!inst.empty()) g_last_inst_versions = inst;
                 }
                 // Also capture a startup snapshot (write to logs for verification)
                 try {
