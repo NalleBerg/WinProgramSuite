@@ -1416,6 +1416,13 @@ static void PopulateListView(HWND hList) {
     ListView_DeleteAllItems(hList);
     LVITEMW lvi{};
     lvi.mask = LVIF_TEXT | LVIF_PARAM;
+    // Keep persistent buffers for item texts so ListView receives stable pointers
+    static std::vector<std::wstring> itemNameBuf;
+    static std::vector<std::wstring> itemCurBuf;
+    static std::vector<std::wstring> itemAvailBuf;
+    static std::vector<std::wstring> itemSkipBuf;
+    itemNameBuf.clear(); itemCurBuf.clear(); itemAvailBuf.clear(); itemSkipBuf.clear();
+    itemNameBuf.resize(g_packages.size()); itemCurBuf.resize(g_packages.size()); itemAvailBuf.resize(g_packages.size()); itemSkipBuf.resize(g_packages.size());
     // prepare maps for versions (prefer cached probes to avoid blocking UI twice)
     auto avail = GetAvailableVersionsCached();
     auto inst = GetInstalledVersionsCached();
@@ -1424,9 +1431,11 @@ static void PopulateListView(HWND hList) {
         std::string id = g_packages[i].first;
         std::wstring wname = Utf8ToWide(name);
         std::wstring wid = Utf8ToWide(id);
+        // store into persistent buffers to ensure pointers remain valid
+        itemNameBuf[i] = wname;
         lvi.iItem = i;
         lvi.iSubItem = 0;
-        lvi.pszText = (LPWSTR)wname.c_str();
+        lvi.pszText = (LPWSTR)itemNameBuf[i].c_str();
         lvi.lParam = i;
         SendMessageW(hList, LVM_INSERTITEMW, 0, (LPARAM)&lvi);
         // Current version (subitem 1)
@@ -1466,14 +1475,16 @@ static void PopulateListView(HWND hList) {
         };
         std::string curv = resolveVersion(inst);
         if (!curv.empty()) wcur = Utf8ToWide(curv);
-        lviCur.pszText = (LPWSTR)wcur.c_str();
+        itemCurBuf[i] = wcur;
+        lviCur.pszText = (LPWSTR)itemCurBuf[i].c_str();
         SendMessageW(hList, LVM_SETITEMW, 0, (LPARAM)&lviCur);
         // Available version (subitem 2)
         LVITEMW lviAvail{}; lviAvail.mask = LVIF_TEXT; lviAvail.iItem = i; lviAvail.iSubItem = 2;
         std::wstring wavail = L"";
         std::string availv = resolveVersion(avail);
         if (!availv.empty()) wavail = Utf8ToWide(availv);
-        lviAvail.pszText = (LPWSTR)wavail.c_str();
+        itemAvailBuf[i] = wavail;
+        lviAvail.pszText = (LPWSTR)itemAvailBuf[i].c_str();
         SendMessageW(hList, LVM_SETITEMW, 0, (LPARAM)&lviAvail);
         // Skip column (subitem 3): show localized Skip label if present
         LVITEMW lviSkip{}; lviSkip.mask = LVIF_TEXT; lviSkip.iItem = i; lviSkip.iSubItem = 3;
@@ -1483,7 +1494,8 @@ static void PopulateListView(HWND hList) {
             auto it = g_skipped_versions.find(id);
             if (it != g_skipped_versions.end()) skipText = t("skip_col");
         }
-        lviSkip.pszText = (LPWSTR)skipText.c_str();
+        itemSkipBuf[i] = skipText;
+        lviSkip.pszText = (LPWSTR)itemSkipBuf[i].c_str();
         SendMessageW(hList, LVM_SETITEMW, 0, (LPARAM)&lviSkip);
     }
 }
@@ -1495,8 +1507,8 @@ static void UpdateListViewHeaders(HWND hList) {
     if (!hHeader || !IsWindow(hHeader)) return;
     static std::vector<std::wstring> headerBuffers;
     headerBuffers.clear();
+    // Columns: Package, Current, Available, Skip
     headerBuffers.push_back(t("package_col"));
-    headerBuffers.push_back(t("id_col"));
     headerBuffers.push_back(t("current_col"));
     headerBuffers.push_back(t("available_col"));
     headerBuffers.push_back(t("skip_col"));
