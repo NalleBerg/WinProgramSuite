@@ -1,13 +1,23 @@
 #include "hyperlink.h"
 #include <string>
+#include "logging.h"
 #include <unordered_map>
 #include <commctrl.h>
 #include <windowsx.h>
 #include <vector>
+#include <unordered_map>
+#include <string>
+#include <fstream>
+#include <functional>
+#include <sstream>
 
 struct HoverInfo { int item; int sub; RECT rect; };
 // track hovered item index per list (or -1 for none)
 static std::unordered_map<HWND, int> g_hovered_index;
+// tooltip window per list
+static std::unordered_map<HWND, HWND> g_tooltips;
+// persistent tooltip text buffer per list (to keep pointer valid for TOOLINFOW)
+static std::unordered_map<HWND, std::wstring> g_tooltip_texts;
 
 static bool IsPointOverSkip(HWND hList, POINT pt, int &outItem, RECT &outRect) {
     LVHITTESTINFO ht{}; ht.pt = pt;
@@ -16,6 +26,125 @@ static bool IsPointOverSkip(HWND hList, POINT pt, int &outItem, RECT &outRect) {
     RECT r; if (!ListView_GetSubItemRect(hList, idx, 3, LVIR_BOUNDS, &r)) return false;
     if (!PtInRectStrict(r, pt)) return false;
     outItem = idx; outRect = r; return true;
+}
+
+static std::wstring Utf8ToWide(const std::string &s) {
+    if (s.empty()) return {};
+    int wideLen = MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), NULL, 0);
+    if (wideLen <= 0) return std::wstring(s.begin(), s.end());
+    std::wstring out(wideLen, 0);
+    MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), &out[0], wideLen);
+    return out;
+}
+
+static std::string ReadFileToString(const std::string &path) {
+    std::ifstream ifs(path, std::ios::binary);
+    if (!ifs) return std::string();
+    std::ostringstream ss; ss << ifs.rdbuf();
+    return ss.str();
+}
+
+static std::string LoadLocaleSetting() {
+    std::ifstream ifs("wup_settings.txt", std::ios::binary);
+    if (!ifs) return std::string();
+    std::string line;
+    while (std::getline(ifs, line)) {
+        size_t eq = line.find('=');
+        if (eq == std::string::npos) continue;
+        std::string key = line.substr(0, eq);
+        std::string val = line.substr(eq+1);
+        if (key == "language" && !val.empty()) return val;
+    }
+    return std::string();
+}
+
+static std::string LoadI18nValue(const std::string &locale, const std::string &key) {
+    std::string fn = std::string("i18n/") + locale + ".txt";
+    std::string txt = ReadFileToString(fn);
+    if (txt.empty()) return std::string();
+    std::istringstream iss(txt);
+    std::string ln;
+    while (std::getline(iss, ln)) {
+        if (ln.empty()) continue;
+        if (ln[0] == '#' || ln[0] == ';') continue;
+        size_t eq = ln.find('=');
+        if (eq == std::string::npos) continue;
+        std::string k = ln.substr(0, eq);
+        std::string v = ln.substr(eq+1);
+        if (k == key) return v;
+    }
+    return std::string();
+}
+
+static bool g_tipClassRegistered = false;
+static const wchar_t *kTipClassName = L"HyperlinkCustomTip";
+
+static void EnsureTipClassRegistered() {
+    if (g_tipClassRegistered) return;
+    WNDCLASSEXW wc{};
+    wc.cbSize = sizeof(wc);
+    wc.style = CS_HREDRAW | CS_NOCLOSE;
+    wc.lpfnWndProc = [](HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)->LRESULT {
+        switch (uMsg) {
+        case WM_PAINT: {
+            PAINTSTRUCT ps; HDC hdc = BeginPaint(hwnd, &ps);
+            RECT rc; GetClientRect(hwnd, &rc);
+            // background
+            HBRUSH hbr = CreateSolidBrush(GetSysColor(COLOR_INFOBK));
+            FillRect(hdc, &rc, hbr);
+            DeleteObject(hbr);
+            // border
+            FrameRect(hdc, &rc, GetSysColorBrush(COLOR_WINDOWFRAME));
+            // draw text stored in window property
+            wchar_t buf[1024] = {0};
+            GetWindowTextW(hwnd, buf, _countof(buf));
+            SetTextColor(hdc, GetSysColor(COLOR_INFOTEXT));
+            SetBkMode(hdc, TRANSPARENT);
+            DrawTextW(hdc, buf, -1, &rc, DT_LEFT | DT_WORDBREAK);
+            EndPaint(hwnd, &ps);
+            return 0;
+        }
+        case WM_NCDESTROY:
+            break;
+        case WM_SETCURSOR:
+            SetCursor(LoadCursor(NULL, IDC_ARROW));
+            return TRUE;
+        }
+        return DefWindowProcW(hwnd, uMsg, wParam, lParam);
+    };
+    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+    wc.hInstance = GetModuleHandleW(NULL);
+    wc.hbrBackground = (HBRUSH)(COLOR_INFOBK + 1);
+    wc.lpszClassName = kTipClassName;
+    RegisterClassExW(&wc);
+    g_tipClassRegistered = true;
+}
+
+static HWND EnsureTooltipForList(HWND hList) {
+    auto it = g_tooltips.find(hList);
+    if (it != g_tooltips.end() && IsWindow(it->second)) return it->second;
+    EnsureTipClassRegistered();
+    HWND owner = GetAncestor(hList, GA_ROOT);
+    if (!owner) owner = GetParent(hList);
+    // create a lightweight popup window (no activate) and keep it hidden until needed
+    HWND tip = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE, kTipClassName, L"", WS_POPUP, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, owner, NULL, GetModuleHandleW(NULL), NULL);
+    if (!tip) return NULL;
+    // ensure it does not take focus
+    SetWindowPos(tip, HWND_TOPMOST, 0,0,0,0, SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
+    g_tooltips[hList] = tip;
+    g_tooltip_texts[hList] = L"";
+    AppendLog("[hyperlink] Created custom tooltip popup\n");
+    return tip;
+}
+
+static std::wstring FormatTooltipTemplate(const std::wstring &tmpl, const std::wstring &appname) {
+    // replace %s or <appname> tokens with appname
+    std::wstring out = tmpl;
+    size_t p = out.find(L"%s");
+    if (p != std::wstring::npos) { out.replace(p, 2, appname); return out; }
+    p = out.find(L"<appname>");
+    if (p != std::wstring::npos) { out.replace(p, wcslen(L"<appname>"), appname); return out; }
+    return out + L" " + appname;
 }
 
 static LRESULT CALLBACK Hyperlink_ListSubclassProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam,
@@ -104,6 +233,52 @@ static LRESULT CALLBACK Hyperlink_ListSubclassProc(HWND hwnd, UINT uMsg, WPARAM 
         // update hover state; if changed, track and set cursor
         if (Hyperlink_ProcessMouseMove(hwnd, pt)) {
             SetCursor(LoadCursor(NULL, IDC_HAND));
+        }
+        // show tooltip when hovering over Skip
+        int hitIndex = -1; RECT hitRect{};
+        if (IsPointOverSkip(hwnd, pt, hitIndex, hitRect)) {
+            HWND tt = EnsureTooltipForList(hwnd);
+            if (tt) {
+                // build tooltip text using i18n
+                std::string locale = LoadLocaleSetting(); if (locale.empty()) locale = "en";
+                std::string tmpl = LoadI18nValue(locale, "skip_tooltip");
+                if (tmpl.empty()) tmpl = LoadI18nValue(locale, "skip_confirm_question");
+                std::wstring wtmpl = Utf8ToWide(tmpl);
+                // get app name from list item text (subitem 0)
+                wchar_t buf[512]; buf[0]=0;
+                LVITEMW lvi{}; lvi.iSubItem = 0; lvi.cchTextMax = _countof(buf); lvi.pszText = buf; lvi.iItem = hitIndex; SendMessageW(hwnd, LVM_GETITEMTEXTW, (WPARAM)hitIndex, (LPARAM)&lvi);
+                std::wstring appname = buf[0] ? std::wstring(buf) : std::wstring();
+                std::wstring final = FormatTooltipTemplate(wtmpl, appname);
+                g_tooltip_texts[hwnd] = final;
+                AppendLog("[hyperlink] Updating custom tooltip text and showing\n");
+                HWND tip = EnsureTooltipForList(hwnd);
+                if (tip && IsWindow(tip)) {
+                    // set text and size
+                    SetWindowTextW(tip, g_tooltip_texts[hwnd].c_str());
+                    // measure via DrawText DT_CALCRECT
+                    HDC hdc = GetDC(tip);
+                    RECT rc = {0,0,400,0};
+                    HFONT hf = (HFONT)SendMessageW(hwnd, WM_GETFONT, 0, 0);
+                    if (hf) SelectObject(hdc, hf);
+                    DrawTextW(hdc, g_tooltip_texts[hwnd].c_str(), -1, &rc, DT_LEFT | DT_WORDBREAK | DT_CALCRECT);
+                    int w = rc.right - rc.left + 12; int h = rc.bottom - rc.top + 8;
+                    ReleaseDC(tip, hdc);
+                    POINT tl = { hitRect.left, hitRect.top }; POINT br = { hitRect.right, hitRect.bottom };
+                    ClientToScreen(hwnd, &tl); ClientToScreen(hwnd, &br);
+                    int tipX = (tl.x + br.x) / 2 - w/2;
+                    int tipY = tl.y - h - 8; // place above
+                    SetWindowPos(tip, HWND_TOPMOST, tipX, tipY, w, h, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+                    InvalidateRect(tip, NULL, TRUE);
+                    AppendLog("[hyperlink] custom tooltip shown\n");
+                }
+            }
+            } else {
+            // hide custom tooltip if present
+            auto it = g_tooltips.find(hwnd);
+            if (it != g_tooltips.end() && IsWindow(it->second)) {
+                AppendLog("[hyperlink] Hiding custom tooltip\n");
+                ShowWindow(it->second, SW_HIDE);
+            }
         }
         break;
     }

@@ -31,6 +31,23 @@
 #  define HAVE_NLOHMANN_JSON 0
 #endif
 
+// Very-very-early static initializer to record process start even before wWinMain.
+struct StartupStaticProbe {
+    StartupStaticProbe() {
+        try {
+            const wchar_t *p = L"logs\startup_static_init.txt";
+            CreateDirectoryW(L"logs", NULL);
+            HANDLE hf = CreateFileW(p, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+            if (hf != INVALID_HANDLE_VALUE) {
+                std::string s = "startup_static_init PID=" + std::to_string(GetCurrentProcessId()) + "\n";
+                DWORD w = 0; WriteFile(hf, s.data(), (DWORD)s.size(), &w, NULL);
+                CloseHandle(hf);
+            }
+        } catch(...) {}
+    }
+};
+static StartupStaticProbe g_startup_static_probe;
+
 // Quick include-time probe: static initializer that displays a MessageBox immediately
 // This is a short-lived test to verify whether a MessageBox appears as soon as the
 // program loads. Remove after testing.
@@ -1725,6 +1742,9 @@ static void AdjustListColumns(HWND hList) {
     // For simplicity, leave font as-is; could implement dynamic font sizing here.
 }
 
+// Show a localized skip confirmation using TaskDialogIndirect with custom button labels.
+// ShowSkipConfirm moved to main.cpp to be linked into the build
+
 // Helper used by custom draw / notifications: check if item index corresponds to NotApplicable id
 static bool IsItemNotApplicable(int index) {
     if (index < 0 || index >= (int)g_packages.size()) return false;
@@ -3001,11 +3021,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     // Very-early probe: log-only (internal MessageBox removed)
     try { WriteWorkspaceLogW(L"probe_very_early.txt", std::string("probe_very_early entry\n")); } catch(...) {}
     try { WriteWorkspaceLogW(L"probe_very_early.txt", std::string("probe_very_early no-box\n")); } catch(...) {}
-    // Blocking startup MessageBox to confirm wWinMain runs in this build
+    // Startup probe: record to desktop log instead of showing blocking MessageBox
     try {
         WriteToDesktop(L"wup_wwinmain_start_desktop.txt", std::string("wWinMain start PID=" + std::to_string(GetCurrentProcessId()) + "\n"));
     } catch(...) {}
-    MessageBoxW(NULL, L"Startup probe: wWinMain reached. Click OK.", L"Probe: wWinMain", MB_OK | MB_SETFOREGROUND | MB_TOPMOST);
+    try { WriteWorkspaceLogW(L"probe_wwinmain_logged.txt", std::string("wWinMain reached PID=" + std::to_string(GetCurrentProcessId()) + "\n")); } catch(...) {}
     WNDCLASSW wc = { };
     wc.lpfnWndProc = WndProc;
     wc.hInstance = hInstance;

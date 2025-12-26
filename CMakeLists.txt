@@ -15,6 +15,9 @@ endif()
 if(EXISTS ${CMAKE_SOURCE_DIR}/src/hyperlink.cpp)
   list(APPEND SOURCES ${CMAKE_SOURCE_DIR}/src/hyperlink.cpp)
 endif()
+if(EXISTS ${CMAKE_SOURCE_DIR}/build/tooltips.cpp)
+  list(APPEND SOURCES ${CMAKE_SOURCE_DIR}/build/tooltips.cpp)
+endif()
 if(EXISTS ${CMAKE_SOURCE_DIR}/winupdate.rc)
   list(APPEND SOURCES ${CMAKE_SOURCE_DIR}/winupdate.rc)
 endif()
@@ -23,6 +26,9 @@ add_executable(WinUpdate ${SOURCES})
 
 # Ensure headers in `src/` are found when building with root `main.cpp`
 target_include_directories(WinUpdate PRIVATE ${CMAKE_SOURCE_DIR}/src)
+if(EXISTS ${CMAKE_SOURCE_DIR}/build)
+  target_include_directories(WinUpdate PRIVATE ${CMAKE_SOURCE_DIR}/build)
+endif()
 
 set_target_properties(WinUpdate PROPERTIES WIN32_EXECUTABLE TRUE)
 
