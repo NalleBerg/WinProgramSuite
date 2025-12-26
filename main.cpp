@@ -1889,13 +1889,14 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
         g_colHeaders.push_back(t("available_col"));
         g_colHeaders.push_back(t("skip_col"));
         LVCOLUMNW col{};
-        col.mask = LVCF_TEXT | LVCF_WIDTH;
+        col.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_FMT;
         col.cx = 420;
+        col.fmt = LVCFMT_LEFT;
         col.pszText = (LPWSTR)g_colHeaders[0].c_str();
         ListView_InsertColumn(hList, 0, &col);
-        LVCOLUMNW colCur{}; colCur.mask = LVCF_TEXT | LVCF_WIDTH; colCur.cx = 100; colCur.pszText = (LPWSTR)g_colHeaders[1].c_str(); ListView_InsertColumn(hList, 1, &colCur);
-        LVCOLUMNW colAvail{}; colAvail.mask = LVCF_TEXT | LVCF_WIDTH; colAvail.cx = 100; colAvail.pszText = (LPWSTR)g_colHeaders[2].c_str(); ListView_InsertColumn(hList, 2, &colAvail);
-        LVCOLUMNW colSkip{}; colSkip.mask = LVCF_TEXT | LVCF_WIDTH; colSkip.cx = 80; colSkip.pszText = (LPWSTR)g_colHeaders[3].c_str(); ListView_InsertColumn(hList, 3, &colSkip);
+        LVCOLUMNW colCur{}; colCur.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_FMT; colCur.cx = 100; colCur.fmt = LVCFMT_RIGHT; colCur.pszText = (LPWSTR)g_colHeaders[1].c_str(); ListView_InsertColumn(hList, 1, &colCur);
+        LVCOLUMNW colAvail{}; colAvail.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_FMT; colAvail.cx = 100; colAvail.fmt = LVCFMT_RIGHT; colAvail.pszText = (LPWSTR)g_colHeaders[2].c_str(); ListView_InsertColumn(hList, 2, &colAvail);
+        LVCOLUMNW colSkip{}; colSkip.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_FMT; colSkip.cx = 80; colSkip.fmt = LVCFMT_CENTER; colSkip.pszText = (LPWSTR)g_colHeaders[3].c_str(); ListView_InsertColumn(hList, 3, &colSkip);
 
         hCheckAll = CreateWindowExW(0, L"Button", t("select_all").c_str(), WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX, 10, 350, 120, 24, hwnd, (HMENU)IDC_CHECK_SELECTALL, NULL, NULL);
         HWND hCheckSkip = CreateWindowExW(0, L"Button", t("skip_col").c_str(), WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX, 140, 350, 140, 24, hwnd, (HMENU)IDC_CHECK_SKIPSELECTED, NULL, NULL);
