@@ -56,10 +56,10 @@ static std::string GetSettingsIniPath() {
     }
     // ensure directory exists
     std::wstring wpath;
-    int nw = MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, NULL, 0);
+    int nw = MultiByteToWideChar(CP_ACP, 0, path.c_str(), -1, NULL, 0);
     if (nw > 0) {
         std::vector<wchar_t> wb(nw);
-        MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, wb.data(), nw);
+        MultiByteToWideChar(CP_ACP, 0, path.c_str(), -1, wb.data(), nw);
         wpath = wb.data();
         CreateDirectoryW(wpath.c_str(), NULL);
     }

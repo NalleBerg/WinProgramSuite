@@ -1,2 +1,0 @@
-Vulkan SDK 1.4.328.1	1.4.328.1
-Mozilla Thunderbird (x64 nb-NO)	146.0

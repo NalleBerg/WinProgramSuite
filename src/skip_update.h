@@ -22,3 +22,8 @@ bool IsSkipped(const std::string &id, const std::string &availableVersion);
 
 // Purge obsolete skipped entries using currentAvailable map (id->availableVersion)
 void PurgeObsoleteSkips(const std::map<std::string,std::string> &currentAvail);
+
+// Append a raw skipped line to the per-user INI under [skipped].
+// This writes a line in the format: identifier<tab>version
+// Returns true on success.
+bool AppendSkippedRaw(const std::string &identifier, const std::string &version);

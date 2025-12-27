@@ -20,6 +20,7 @@
 #include <filesystem>
 #include "About.h"
 #include "skip_update.h"
+#include "parsing.h"
 // detect nlohmann/json.hpp if available; fall back to ad-hoc parser otherwise
 #if defined(__has_include)
 #  if __has_include(<nlohmann/json.hpp>)
@@ -51,6 +52,9 @@ static StartupStaticProbe g_startup_static_probe;
 
 // Small helper that writes a UTF-8 narrow string into the workspace logs folder
 static void WriteWorkspaceLogW(const wchar_t *fname, const std::string &content) {
+    // Respect global logging toggle
+    extern std::atomic<bool> g_enable_logging;
+    if (!g_enable_logging.load()) return;
     // absolute workspace path (explicit to avoid CWD ambiguity during packaged runs)
     const wchar_t *workspaceLogs = L"C:\\Users\\NalleBerg\\Documents\\C++\\Workspace\\WinUpdate\\logs";
     CreateDirectoryW(workspaceLogs, NULL);
@@ -133,8 +137,8 @@ static std::unordered_map<std::string,std::string> MapInstalledVersions();
 
 
 // Globals
-static std::vector<std::pair<std::string,std::string>> g_packages;
-static std::mutex g_packages_mutex;
+std::vector<std::pair<std::string,std::string>> g_packages;
+std::mutex g_packages_mutex;
 static std::set<std::string> g_not_applicable_ids;
 // per-locale skipped versions: id -> version
 static std::unordered_map<std::string,std::string> g_skipped_versions;
@@ -2472,13 +2476,14 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                 // fallback: try direct map
                 try { auto avail2 = MapAvailableVersions(); auto it2 = avail2.find(id); if (it2!=avail2.end()) ver = it2->second; } catch(...) {}
             }
-            bool added = AddSkippedEntry(id, ver);
-            // Inform the user (temporary diagnostic) whether the write succeeded and which values were used.
+            // Write quick workspace-level debug log so we can see handler execution
             try {
-                std::wstring msg = L"Skip request:\nID: " + Utf8ToWide(id) + L"\nVersion: " + Utf8ToWide(ver) + L"\nWrite: ";
-                msg += (added ? L"OK" : L"FAILED");
-                MessageBoxW(hwnd, msg.c_str(), L"Skip result", MB_OK | MB_ICONINFORMATION);
+                std::string dbg = std::string("WM_APP+200 handler idx=") + std::to_string(idx) + " id=" + id + " ver=" + ver + "\n";
+                WriteWorkspaceLogW(L"skip_handler.txt", dbg);
             } catch(...) {}
+
+            bool added = AddSkippedEntry(id, ver);
+            // (no interactive diagnostic) update in-memory map and persist
             if (added) {
                 // update in-memory map and per-locale config so UI shows skipped state
                 try { g_skipped_versions[id] = ver; SaveSkipConfig(g_locale); } catch(...) {}
@@ -2495,6 +2500,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
         if (!pcds || !pcds->lpData) break;
         try {
             std::string payload((char*)pcds->lpData, pcds->cbData ? pcds->cbData - 1 : 0);
+            AppendLog(std::string("WM_COPYDATA: payload='") + payload + "'\n");
             // Expect payload starting with "WUP_SKIP\n<appname>\n<available>\n"
             if (payload.rfind("WUP_SKIP\n", 0) == 0) {
                 size_t pos = 8; // after prefix
@@ -2507,21 +2513,48 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                 std::string avail = (pos2 <= e2) ? payload.substr(pos2, e2 - pos2) : std::string();
                 // find matching package by displayed name (g_packages[][1] == name)
                 int foundIdx = -1;
+                // If g_packages is empty (UI may not have populated it yet), try
+                // to repopulate from the most recent raw winget capture so we
+                // can still resolve names->ids for WM_COPYDATA messages.
+                try {
+                    std::lock_guard<std::mutex> lkchk(g_packages_mutex);
+                    if (g_packages.empty()) {
+                        AppendLog(std::string("WM_COPYDATA: g_packages empty, attempting to repopulate from recent raw winget\n"));
+                        try {
+                            std::string raw = ReadMostRecentRawWinget();
+                            if (!raw.empty()) {
+                                ParseWingetTextForPackages(raw);
+                                AppendLog(std::string("WM_COPYDATA: ParseWingetTextForPackages populated g_packages size=") + std::to_string((int)g_packages.size()) + "\n");
+                            } else {
+                                AppendLog("WM_COPYDATA: ReadMostRecentRawWinget returned empty\n");
+                            }
+                        } catch(...) { AppendLog("WM_COPYDATA: repopulate attempt threw\n"); }
+                    }
+                } catch(...) {}
                 {
                     std::lock_guard<std::mutex> lk(g_packages_mutex);
                     for (int i = 0; i < (int)g_packages.size(); ++i) {
                         if (g_packages[i].second == appn) { foundIdx = i; break; }
                     }
                 }
+                AppendLog(std::string("WM_COPYDATA: foundIdx=") + std::to_string(foundIdx) + "\n");
+                if (foundIdx < 0) {
+                    // Try a more tolerant match: case-insensitive and substring matching
+                    std::string appn_lower = appn; for (auto &c : appn_lower) c = (char)tolower((unsigned char)c);
+                    std::lock_guard<std::mutex> lk2(g_packages_mutex);
+                    for (int i = 0; i < (int)g_packages.size(); ++i) {
+                        std::string nm = g_packages[i].second;
+                        std::string nm_lower = nm; for (auto &c : nm_lower) c = (char)tolower((unsigned char)c);
+                        if (nm_lower == appn_lower || nm_lower.find(appn_lower) != std::string::npos || appn_lower.find(nm_lower) != std::string::npos) { foundIdx = i; break; }
+                    }
+                    AppendLog(std::string("WM_COPYDATA: tolerant match foundIdx=") + std::to_string(foundIdx) + "\n");
+                }
                 if (foundIdx >= 0 && foundIdx < (int)g_packages.size()) {
                     std::string id = g_packages[foundIdx].first;
+                    AppendLog(std::string("WM_COPYDATA: mapping appname->id='") + id + "' avail='" + avail + "'\n");
                     bool added = AddSkippedEntry(id, avail);
-                    // Temporary diagnostic: popup showing received payload and AddSkippedEntry result
-                    try {
-                        std::wstring msg = L"WM_COPYDATA payload:\nApp: " + Utf8ToWide(appn) + L"\nAvailable: " + Utf8ToWide(avail) + L"\nId: " + Utf8ToWide(id) + L"\nAddSkippedEntry: ";
-                        msg += (added ? L"OK" : L"FAILED");
-                        MessageBoxW(hwnd, msg.c_str(), L"WM_COPYDATA diagnostic", MB_OK | MB_ICONINFORMATION);
-                    } catch(...) {}
+                    AppendLog(std::string("WM_COPYDATA: AddSkippedEntry returned ") + (added?"true":"false") + "\n");
+                    // No interactive diagnostic here; update in-memory map and persist
                     if (added) {
                         try { g_skipped_versions[id] = avail; SaveSkipConfig(g_locale); } catch(...) {}
                         HWND hUn = GetDlgItem(hwnd, IDC_BTN_UNSKIP); if (hUn) { ShowWindow(hUn, SW_SHOW); EnableWindow(hUn, TRUE); }

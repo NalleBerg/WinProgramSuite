@@ -2,6 +2,8 @@
 #include "skip_confirm_dialog.h"
 #include <string>
 #include "logging.h"
+#include "parsing.h"
+#include "skip_update.h"
 #include <unordered_map>
 #include <commctrl.h>
 #include <windowsx.h>
@@ -65,10 +67,10 @@ static std::string GetSettingsIniPath() {
     }
     // ensure directory exists
     std::wstring wpath;
-    int nw = MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, NULL, 0);
+    int nw = MultiByteToWideChar(CP_ACP, 0, path.c_str(), -1, NULL, 0);
     if (nw > 0) {
         std::vector<wchar_t> wb(nw);
-        MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, wb.data(), nw);
+        MultiByteToWideChar(CP_ACP, 0, path.c_str(), -1, wb.data(), nw);
         wpath = wb.data();
         CreateDirectoryW(wpath.c_str(), NULL);
     }
@@ -439,19 +441,116 @@ static LRESULT CALLBACK Hyperlink_ListSubclassProc(HWND hwnd, UINT uMsg, WPARAM 
                     // Retrieve the item's lParam (which holds the package index into g_packages)
                     LPARAM pkgIdx = (LPARAM)hitItem; // fallback to visual index
                     try {
-                        LVITEMW lvi{}; lvi.iItem = hitItem; lvi.mask = LVIF_PARAM; SendMessageW(hwnd, LVM_GETITEMW, 0, (LPARAM)&lvi); pkgIdx = lvi.lParam;
+                        LVITEMW lvi{}; lvi.iItem = hitItem; lvi.mask = LVIF_PARAM; SendMessageW(hwnd, LVM_GETITEMW, (WPARAM)hitItem, (LPARAM)&lvi); pkgIdx = lvi.lParam;
                     } catch(...) {}
                     // Diagnostic pop-up to ensure the click produced expected values
                     try {
                         std::wstring dbg = L"Skip click captured:\napp=" + std::wstring((wchar_t*)0) + L"\n";
                         // Build a small diagnostic showing indices and available text
-                        wchar_t bufApp[256] = {0}; LVITEMW lviApp{}; lviApp.iItem = hitItem; lviApp.iSubItem = 0; lviApp.cchTextMax = _countof(bufApp); lviApp.pszText = bufApp; lviApp.mask = LVIF_TEXT; SendMessageW(hwnd, LVM_GETITEMW, 0, (LPARAM)&lviApp);
-                        wchar_t bufAvail[128] = {0}; LVITEMW lviAvail{}; lviAvail.iItem = hitItem; lviAvail.iSubItem = 2; lviAvail.cchTextMax = _countof(bufAvail); lviAvail.pszText = bufAvail; lviAvail.mask = LVIF_TEXT; SendMessageW(hwnd, LVM_GETITEMW, 0, (LPARAM)&lviAvail);
+                        wchar_t bufApp[256] = {0}; LVITEMW lviApp{}; lviApp.iItem = hitItem; lviApp.iSubItem = 0; lviApp.cchTextMax = _countof(bufApp); lviApp.pszText = bufApp; lviApp.mask = LVIF_TEXT; SendMessageW(hwnd, LVM_GETITEMW, (WPARAM)hitItem, (LPARAM)&lviApp);
+                        wchar_t bufAvail[128] = {0}; LVITEMW lviAvail{}; lviAvail.iItem = hitItem; lviAvail.iSubItem = 2; lviAvail.cchTextMax = _countof(bufAvail); lviAvail.pszText = bufAvail; lviAvail.mask = LVIF_TEXT; SendMessageW(hwnd, LVM_GETITEMW, (WPARAM)hitItem, (LPARAM)&lviAvail);
                         std::wstring sdbg = L"app=" + std::wstring(bufApp) + L"\navail=" + std::wstring(bufAvail) + L"\nhitIndex=" + std::to_wstring(hitItem) + L"\nlParam(pkgIdx)=" + std::to_wstring((long long)pkgIdx);
                         MessageBoxW(parent, sdbg.c_str(), L"DEBUG: skip click", MB_OK | MB_ICONINFORMATION);
                     } catch(...) {}
-                    AppendLog(std::string("[hyperlink] posting WM_APP+200 to mainWnd=") + std::to_string((uintptr_t)mainWnd) + " pkgIdx=" + std::to_string((long long)pkgIdx) + "\n");
-                    PostMessageW(mainWnd, WM_APP + 200, (WPARAM)pkgIdx, (LPARAM)3);
+                    AppendLog(std::string("[hyperlink] sending WM_COPYDATA to mainWnd=") + std::to_string((uintptr_t)mainWnd) + " pkgIdx=" + std::to_string((long long)pkgIdx) + "\n");
+                    // Build payload as used by skip_confirm_dialog: "WUP_SKIP\n<appname>\n<available>\n"
+                    try {
+                        wchar_t bufApp[256] = {0}; LVITEMW lviApp{}; lviApp.iItem = hitItem; lviApp.iSubItem = 0; lviApp.cchTextMax = _countof(bufApp); lviApp.pszText = bufApp; lviApp.mask = LVIF_TEXT; SendMessageW(hwnd, LVM_GETITEMW, (WPARAM)hitItem, (LPARAM)&lviApp);
+                        wchar_t bufAvail[128] = {0}; LVITEMW lviAvail{}; lviAvail.iItem = hitItem; lviAvail.iSubItem = 2; lviAvail.cchTextMax = _countof(bufAvail); lviAvail.pszText = bufAvail; lviAvail.mask = LVIF_TEXT; SendMessageW(hwnd, LVM_GETITEMW, (WPARAM)hitItem, (LPARAM)&lviAvail);
+                        // Convert to UTF-8
+                        std::string appn_utf8; int needed = WideCharToMultiByte(CP_UTF8, 0, bufApp, -1, NULL, 0, NULL, NULL);
+                        if (needed>0) { std::vector<char> b(needed); WideCharToMultiByte(CP_UTF8,0,bufApp,-1,b.data(),needed,NULL,NULL); appn_utf8 = b.data(); }
+                        std::string ver_utf8; needed = WideCharToMultiByte(CP_UTF8, 0, bufAvail, -1, NULL, 0, NULL, NULL);
+                        if (needed>0) { std::vector<char> b2(needed); WideCharToMultiByte(CP_UTF8,0,bufAvail,-1,b2.data(),needed,NULL,NULL); ver_utf8 = b2.data(); }
+                        std::string payload = std::string("WUP_SKIP\n") + appn_utf8 + "\n" + ver_utf8 + "\n";
+                        // Ensure persistence locally first (use lParam pkg index if present)
+                        try {
+                            auto resolveId = [&](const std::string &name, int index)->std::string {
+                                std::string out;
+                                try {
+                                    std::lock_guard<std::mutex> lk(g_packages_mutex);
+                                    if (index >= 0 && index < (int)g_packages.size()) out = g_packages[index].first;
+                                    if (!out.empty()) return out;
+                                    // exact match
+                                    for (int i = 0; i < (int)g_packages.size(); ++i) if (g_packages[i].second == name) return g_packages[i].first;
+                                    // case-insensitive and substring matches
+                                    std::string name_l = name; for (auto &c : name_l) c = (char)tolower((unsigned char)c);
+                                    for (int i = 0; i < (int)g_packages.size(); ++i) {
+                                        std::string nm = g_packages[i].second; std::string nm_l = nm; for (auto &c : nm_l) c = (char)tolower((unsigned char)c);
+                                        if (nm_l == name_l || nm_l.find(name_l) != std::string::npos || name_l.find(nm_l) != std::string::npos) return g_packages[i].first;
+                                    }
+                                } catch(...) {}
+                                return std::string();
+                            };
+                            std::string id;
+                            int pi = (int)pkgIdx;
+                            id = resolveId(appn_utf8, pi);
+                            // If still not found, try repopulating g_packages from recent raw winget output
+                            if (id.empty()) {
+                                try {
+                                    AppendLog("[hyperlink] pre-send: attempting to repopulate g_packages from raw winget\n");
+                                    std::string raw = ReadMostRecentRawWinget();
+                                    if (!raw.empty()) {
+                                        ParseWingetTextForPackages(raw);
+                                        AppendLog(std::string("[hyperlink] pre-send: ParseWingetTextForPackages populated g_packages size=") + std::to_string((int)g_packages.size()) + "\n");
+                                    }
+                                } catch(...) { AppendLog("[hyperlink] pre-send: repopulate attempt threw\n"); }
+                                id = resolveId(appn_utf8, pi);
+                            }
+                            if (!id.empty()) {
+                                AppendLog(std::string("[hyperlink] pre-send local AddSkippedEntry id=") + id + " ver=" + ver_utf8 + "\n");
+                                bool ok = AddSkippedEntry(id, ver_utf8);
+                                AppendLog(std::string("[hyperlink] pre-send AddSkippedEntry result=") + (ok?"OK":"FAIL") + "\n");
+                                PostMessageW(mainWnd, WM_APP + 1, (WPARAM)1, (LPARAM)0);
+                            } else {
+                                AppendLog("[hyperlink] pre-send: could not resolve id for local persistence, appending raw\n");
+                                try {
+                                    bool ok2 = AppendSkippedRaw(appn_utf8, ver_utf8);
+                                    AppendLog(std::string("[hyperlink] pre-send AppendSkippedRaw result=") + (ok2?"OK":"FAIL") + "\n");
+                                } catch(...) { AppendLog("[hyperlink] pre-send AppendSkippedRaw threw\n"); }
+                            }
+                        } catch(...) { AppendLog("[hyperlink] pre-send local AddSkippedEntry threw\n"); }
+
+                        COPYDATASTRUCT cds{}; cds.dwData = 0x57475053; cds.cbData = (DWORD)(payload.size()+1); cds.lpData = (PVOID)payload.c_str();
+                        LRESULT r = SendMessageA((HWND)mainWnd, WM_COPYDATA, (WPARAM)NULL, (LPARAM)&cds);
+                        AppendLog(std::string("[hyperlink] SendMessageA(WM_COPYDATA) returned ") + std::to_string((long long)r) + "\n");
+                        // Also perform local AddSkippedEntry to ensure persistence if WM_COPYDATA
+                        // route fails for any reason. Find package id by displayed name.
+                        try {
+                            auto resolveId2 = [&](const std::string &name, int index)->std::string {
+                                std::string out;
+                                try {
+                                    std::lock_guard<std::mutex> lk(g_packages_mutex);
+                                    if (index >= 0 && index < (int)g_packages.size()) out = g_packages[index].first;
+                                    if (!out.empty()) return out;
+                                    for (int i = 0; i < (int)g_packages.size(); ++i) if (g_packages[i].second == name) return g_packages[i].first;
+                                    std::string name_l = name; for (auto &c : name_l) c = (char)tolower((unsigned char)c);
+                                    for (int i = 0; i < (int)g_packages.size(); ++i) {
+                                        std::string nm = g_packages[i].second; std::string nm_l = nm; for (auto &c : nm_l) c = (char)tolower((unsigned char)c);
+                                        if (nm_l == name_l || nm_l.find(name_l) != std::string::npos || name_l.find(nm_l) != std::string::npos) return g_packages[i].first;
+                                    }
+                                } catch(...) {}
+                                return std::string();
+                            };
+                            std::string id = resolveId2(appn_utf8, (int)pkgIdx);
+                            if (id.empty()) {
+                                AppendLog("[hyperlink] local AddSkippedEntry: attempting repopulate from raw winget\n");
+                                try { std::string raw = ReadMostRecentRawWinget(); if (!raw.empty()) { ParseWingetTextForPackages(raw); AppendLog(std::string("[hyperlink] repopulated g_packages size=") + std::to_string((int)g_packages.size()) + "\n"); } } catch(...) { AppendLog("[hyperlink] repopulate threw\n"); }
+                                id = resolveId2(appn_utf8, (int)pkgIdx);
+                            }
+                            if (!id.empty()) {
+                                AppendLog(std::string("[hyperlink] local AddSkippedEntry attempt id=") + id + " ver=" + ver_utf8 + "\n");
+                                bool ok = AddSkippedEntry(id, ver_utf8);
+                                AppendLog(std::string("[hyperlink] local AddSkippedEntry result=") + (ok?"OK":"FAIL") + "\n");
+                                // request UI refresh (WM_APP+1)
+                                PostMessageW(mainWnd, WM_APP + 1, (WPARAM)1, (LPARAM)0);
+                            } else {
+                                AppendLog("[hyperlink] local AddSkippedEntry: could not resolve id, skipping second raw append\n");
+                            }
+                        } catch(...) { AppendLog("[hyperlink] local AddSkippedEntry failed\n"); }
+                    } catch(...) {
+                        AppendLog("[hyperlink] WM_COPYDATA send failed\n");
+                    }
                 } else {
                     AppendLog("[hyperlink] failed to find main window to post skip message\n");
                 }
