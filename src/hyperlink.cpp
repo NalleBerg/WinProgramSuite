@@ -1,4 +1,5 @@
 #include "hyperlink.h"
+#include "skip_confirm_dialog.h"
 #include <string>
 #include "logging.h"
 #include <unordered_map>
@@ -37,6 +38,15 @@ static std::wstring Utf8ToWide(const std::string &s) {
     return out;
 }
 
+static std::string WideToUtf8(const std::wstring &w) {
+    if (w.empty()) return std::string();
+    int needed = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), NULL, 0, NULL, NULL);
+    if (needed <= 0) return std::string(w.begin(), w.end());
+    std::string out(needed, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &out[0], needed, NULL, NULL);
+    return out;
+}
+
 static std::string ReadFileToString(const std::string &path) {
     std::ifstream ifs(path, std::ios::binary);
     if (!ifs) return std::string();
@@ -44,16 +54,53 @@ static std::string ReadFileToString(const std::string &path) {
     return ss.str();
 }
 
+static std::string GetSettingsIniPath() {
+    char buf[MAX_PATH];
+    DWORD len = GetEnvironmentVariableA("APPDATA", buf, MAX_PATH);
+    std::string path;
+    if (len > 0 && len < MAX_PATH) {
+        path = std::string(buf) + "\\WinUpdate";
+    } else {
+        path = "."; // fallback to current dir
+    }
+    // ensure directory exists
+    std::wstring wpath;
+    int nw = MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, NULL, 0);
+    if (nw > 0) {
+        std::vector<wchar_t> wb(nw);
+        MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, wb.data(), nw);
+        wpath = wb.data();
+        CreateDirectoryW(wpath.c_str(), NULL);
+    }
+    std::string ini = path + "\\wup_settings.ini";
+    return ini;
+}
+
 static std::string LoadLocaleSetting() {
-    std::ifstream ifs("wup_settings.txt", std::ios::binary);
-    if (!ifs) return std::string();
+    std::string ini = GetSettingsIniPath();
+    std::ifstream ifs(ini, std::ios::binary);
+    if (!ifs) {
+        // create default INI with required sections
+        std::ofstream ofs(ini, std::ios::binary);
+        if (ofs) {
+            ofs << "[language]\n";
+            ofs << "en\n\n";
+            ofs << "[skipped]\n";
+        }
+        return std::string("en");
+    }
+    auto trim = [](std::string &s){ size_t a = s.find_first_not_of(" \t\r\n"); if (a==std::string::npos) { s.clear(); return; } size_t b = s.find_last_not_of(" \t\r\n"); s = s.substr(a, b-a+1); };
     std::string line;
+    bool inLang = false;
     while (std::getline(ifs, line)) {
-        size_t eq = line.find('=');
-        if (eq == std::string::npos) continue;
-        std::string key = line.substr(0, eq);
-        std::string val = line.substr(eq+1);
-        if (key == "language" && !val.empty()) return val;
+        trim(line);
+        if (line.empty()) continue;
+        if (line[0] == '#' || line[0] == ';') continue;
+        if (line.front() == '[') {
+            inLang = (line == "[language]");
+            continue;
+        }
+        if (inLang) return line;
     }
     return std::string();
 }
@@ -142,10 +189,13 @@ static HWND EnsureTooltipForList(HWND hList) {
     HWND owner = GetAncestor(hList, GA_ROOT);
     if (!owner) owner = GetParent(hList);
     // create a lightweight popup window (no activate) and keep it hidden until needed
-    HWND tip = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE, kTipClassName, L"", WS_POPUP, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, owner, NULL, GetModuleHandleW(NULL), NULL);
+    // Do NOT use WS_EX_TOPMOST — topmost tooltips will stay above other apps
+    // and can overlay during Alt+Tab. Keep the tooltip non-topmost and
+    // use SWP_NOACTIVATE when showing so it does not steal focus.
+    HWND tip = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, kTipClassName, L"", WS_POPUP, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, owner, NULL, GetModuleHandleW(NULL), NULL);
     if (!tip) return NULL;
-    // ensure it does not take focus
-    SetWindowPos(tip, HWND_TOPMOST, 0,0,0,0, SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
+    // ensure it does not take focus; do NOT force topmost so it won't overlay other apps
+    SetWindowPos(tip, HWND_TOP, 0,0,0,0, SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
     g_tooltips[hList] = tip;
     g_tooltip_texts[hList] = L"";
     AppendLog("[hyperlink] Created custom tooltip popup\n");
@@ -252,6 +302,15 @@ static LRESULT CALLBACK Hyperlink_ListSubclassProc(HWND hwnd, UINT uMsg, WPARAM 
         if (Hyperlink_ProcessMouseMove(hwnd, pt)) {
             SetCursor(LoadCursor(NULL, IDC_HAND));
         }
+        // ensure we get a WM_MOUSELEAVE when the pointer leaves the control
+        {
+            TRACKMOUSEEVENT tme{};
+            tme.cbSize = sizeof(tme);
+            tme.dwFlags = TME_LEAVE;
+            tme.hwndTrack = hwnd;
+            TrackMouseEvent(&tme);
+        }
+
         // show tooltip when hovering over Skip
         int hitIndex = -1; RECT hitRect{};
         if (IsPointOverSkip(hwnd, pt, hitIndex, hitRect)) {
@@ -297,7 +356,8 @@ static LRESULT CALLBACK Hyperlink_ListSubclassProc(HWND hwnd, UINT uMsg, WPARAM 
                     if (tipX < wa.left) tipX = wa.left + 4;
                     if (tipX + w > wa.right) tipX = wa.right - w - 4;
                     if (tipY < wa.top) tipY = br.y + 8; // if no space above, show below
-                    SetWindowPos(tip, HWND_TOPMOST, tipX, tipY, w, h, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+                    // Do not force topmost; position above other windows but don't steal z-order
+                    SetWindowPos(tip, HWND_TOP, tipX, tipY, w, h, SWP_NOACTIVATE | SWP_SHOWWINDOW);
                     InvalidateRect(tip, NULL, TRUE);
                     AppendLog("[hyperlink] custom tooltip shown\n");
                 }
@@ -309,6 +369,23 @@ static LRESULT CALLBACK Hyperlink_ListSubclassProc(HWND hwnd, UINT uMsg, WPARAM 
                 AppendLog("[hyperlink] Hiding custom tooltip\n");
                 ShowWindow(it->second, SW_HIDE);
             }
+        }
+        break;
+    }
+    case WM_MOUSELEAVE: {
+        auto it = g_tooltips.find(hwnd);
+        if (it != g_tooltips.end() && IsWindow(it->second)) {
+            AppendLog("[hyperlink] WM_MOUSELEAVE - hiding custom tooltip\n");
+            ShowWindow(it->second, SW_HIDE);
+        }
+        break;
+    }
+    case WM_KILLFOCUS:
+    case WM_CAPTURECHANGED: {
+        auto it = g_tooltips.find(hwnd);
+        if (it != g_tooltips.end() && IsWindow(it->second)) {
+            AppendLog("[hyperlink] focus/capture lost - hiding custom tooltip\n");
+            ShowWindow(it->second, SW_HIDE);
         }
         break;
     }
@@ -327,7 +404,44 @@ static LRESULT CALLBACK Hyperlink_ListSubclassProc(HWND hwnd, UINT uMsg, WPARAM 
         int hitItem; RECT hitRect;
         if (IsPointOverSkip(hwnd, pt, hitItem, hitRect)) {
             HWND parent = GetParent(hwnd);
-            if (parent) PostMessageW(parent, WM_APP + 200, (WPARAM)hitItem, (LPARAM)3);
+            // retrieve app name (subitem 0) and available version (subitem 2) for the confirm dialog
+            wchar_t appbuf[512] = {0};
+            LVITEMW lviApp{}; lviApp.iSubItem = 0; lviApp.cchTextMax = _countof(appbuf); lviApp.pszText = appbuf; lviApp.iItem = hitItem;
+            SendMessageW(hwnd, LVM_GETITEMTEXTW, (WPARAM)hitItem, (LPARAM)&lviApp);
+            std::wstring appname = appbuf;
+            wchar_t availbuf[128] = {0};
+            LVITEMW lviAvail{}; lviAvail.iSubItem = 2; lviAvail.cchTextMax = _countof(availbuf); lviAvail.pszText = availbuf; lviAvail.iItem = hitItem;
+            SendMessageW(hwnd, LVM_GETITEMTEXTW, (WPARAM)hitItem, (LPARAM)&lviAvail);
+            std::wstring avail = availbuf;
+            // show localized confirmation immediately; if confirmed, notify parent to perform skip
+            bool ok = false;
+            try {
+                AppendLog(std::string("[hyperlink] invoking ShowSkipConfirm for app=") + WideToUtf8(appname) + " avail=" + WideToUtf8(avail) + "\n");
+                ok = ShowSkipConfirm(parent ? parent : hwnd, appname, avail);
+                AppendLog(std::string("[hyperlink] ShowSkipConfirm returned=") + (ok?"1":"0") + "\n");
+            } catch (...) {
+                AppendLog("[hyperlink] ShowSkipConfirm threw exception\n");
+                ok = false;
+            }
+            if (ok) {
+                // Post skip request to the top-level window (ancestor) to ensure
+                // the main window procedure receives the message even if the
+                // direct parent is a nested control.
+                // Prefer posting directly to the main application window by class name
+                // to ensure the correct window procedure receives the skip request.
+                HWND mainWnd = FindWindowW(L"WinUpdateClass", NULL);
+                if (!mainWnd) {
+                    // fallback: use ancestor of parent
+                    if (parent) mainWnd = GetAncestor(parent, GA_ROOT);
+                    if (!mainWnd) mainWnd = GetAncestor(hwnd, GA_ROOT);
+                }
+                if (mainWnd) {
+                    AppendLog(std::string("[hyperlink] posting WM_APP+200 to mainWnd=") + std::to_string((uintptr_t)mainWnd) + "\n");
+                    PostMessageW(mainWnd, WM_APP + 200, (WPARAM)hitItem, (LPARAM)3);
+                } else {
+                    AppendLog("[hyperlink] failed to find main window to post skip message\n");
+                }
+            }
             return 0; // swallow to prevent selection change
         }
         break;

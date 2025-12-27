@@ -19,6 +19,7 @@
 #include <unordered_set>
 #include <filesystem>
 #include "About.h"
+#include "skip_update.h"
 // detect nlohmann/json.hpp if available; fall back to ad-hoc parser otherwise
 #if defined(__has_include)
 #  if __has_include(<nlohmann/json.hpp>)
@@ -47,35 +48,6 @@ struct StartupStaticProbe {
     }
 };
 static StartupStaticProbe g_startup_static_probe;
-
-// Quick include-time probe: static initializer that displays a MessageBox immediately
-// This is a short-lived test to verify whether a MessageBox appears as soon as the
-// program loads. Remove after testing.
-struct IncludeTimeProbe {
-    IncludeTimeProbe() {
-        MessageBoxW(NULL, L"Include-time probe: app started.", L"Probe: include-time", MB_OK | MB_SETFOREGROUND | MB_TOPMOST);
-    }
-};
-static IncludeTimeProbe g_includeTimeProbe;
-
-// Forward-declare cleanup so we can run it very early (remove stale wup_install_*.txt files)
-    }
-
-// Forward declaration for logging used by very-early probe
-static void WriteWorkspaceLogW(const wchar_t *fname, const std::string &content);
-
-// Very-early CRT-entry probe: show blocking MessageBox so user must confirm visibility
-struct VeryEarlyCRTProbe {
-    VeryEarlyCRTProbe() {
-        try { WriteWorkspaceLogW(L"probe_crt_entry.txt", std::string("probe_crt_entry entry\n")); } catch(...) {}
-        // Spawn external non-blocking probe before the blocking internal MessageBox
-        try { SpawnProbeMessageBoxAt(40,40, L"Probe: CRT pre-box", L"External probe at CRT entry"); } catch(...) {}
-        // Blocking MessageBox at CRT entry
-        MessageBoxW(NULL, L"CRT-entry probe: click OK to continue.", L"Probe: CRT-entry", MB_OK | MB_SETFOREGROUND | MB_TOPMOST);
-        try { WriteWorkspaceLogW(L"probe_crt_entry.txt", std::string("probe_crt_entry after box\n")); } catch(...) {}
-    }
-};
-static VeryEarlyCRTProbe g_veryEarlyCRTProbe;
 
 // Small helper that writes a UTF-8 narrow string into the workspace logs folder
 static void WriteWorkspaceLogW(const wchar_t *fname, const std::string &content) {
@@ -115,7 +87,6 @@ static void ForceApplyHeaderTexts(HWND hList) {
     UpdateWindow(hList);
 }
 
-static void PopulateListView(HWND hList) {
 static struct WUPEarlyCleaner {
     WUPEarlyCleaner() {
         try { CleanupStaleInstallFiles(); } catch(...) {}
@@ -134,6 +105,8 @@ const wchar_t CLASS_NAME[] = L"WinUpdateClass";
 #define IDC_BTN_DONE 2003
 #define IDC_CHECK_SKIPSELECTED 2004
 #define IDC_BTN_ABOUT 2005
+#define IDC_CHECK_SHOW_SKIPPED 2006
+#define IDC_BTN_UNSKIP 2007
 // IDC_BTN_PASTE removed: app will auto-scan winget at startup/refresh
 #define IDC_COMBO_LANG 3001
 
@@ -2169,7 +2142,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
         if (hCheckSkip) EnableWindow(hCheckSkip, FALSE);
         // place Upgrade button 5px to the right of Select all
         hBtnUpgrade = CreateWindowExW(0, L"Button", t("upgrade_now").c_str(), WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 135, 350, 220, 28, hwnd, (HMENU)IDC_BTN_UPGRADE, NULL, NULL);
-        // Paste button removed — app scans `winget` at startup and on Refresh
+        // Show skipped checkbox between Upgrade and Refresh
+        HWND hCheckShowSkipped = CreateWindowExW(0, L"Button", t("show_skipped").c_str(), WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX, 365, 350, 120, 24, hwnd, (HMENU)IDC_CHECK_SHOW_SKIPPED, NULL, NULL);
+        // Unskip selected (hidden by default)
+        HWND hBtnUnskip = CreateWindowExW(0, L"Button", t("unskip_selected").c_str(), WS_CHILD /*| WS_VISIBLE*/, WS_DISABLED | BS_PUSHBUTTON, 10, 380, 140, 28, hwnd, (HMENU)IDC_BTN_UNSKIP, NULL, NULL);
         // position Refresh where the Upgrade button used to be (bottom-right)
         hBtnRefresh = CreateWindowExW(0, L"Button", t("refresh").c_str(), WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 470, 350, 140, 28, hwnd, (HMENU)IDC_BTN_REFRESH, NULL, NULL);
 
@@ -2477,6 +2453,35 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     case WM_APP+7: {
         // Bring main window forward (sent from background thread after installs finish)
         TryForceForegroundWindow(hwnd);
+        break;
+    }
+    case WM_APP+200: {
+        // Hyperlink skip request: wParam = list index
+        int idx = (int)wParam;
+        AppendLog("[main] WM_APP+200 skip request idx=" + std::to_string(idx) + "\n");
+        if (idx >= 0 && idx < (int)g_packages.size()) {
+            std::string id = g_packages[idx].first;
+            // determine available version
+            std::string ver = "";
+            try {
+                auto avail = GetAvailableVersionsCached();
+                auto it = avail.find(id);
+                if (it != avail.end()) ver = it->second;
+            } catch(...) {}
+            if (ver.empty()) {
+                // fallback: try direct map
+                try { auto avail2 = MapAvailableVersions(); auto it2 = avail2.find(id); if (it2!=avail2.end()) ver = it2->second; } catch(...) {}
+            }
+            bool added = AddSkippedEntry(id, ver);
+            if (added) {
+                // update in-memory map and per-locale config so UI shows skipped state
+                try { g_skipped_versions[id] = ver; SaveSkipConfig(g_locale); } catch(...) {}
+                // ensure Show skipped control becomes visible
+                HWND hUn = GetDlgItem(hwnd, IDC_BTN_UNSKIP); if (hUn) { ShowWindow(hUn, SW_SHOW); EnableWindow(hUn, TRUE); }
+                // trigger immediate async refresh (user requested scan after skip)
+                if (!g_refresh_in_progress.load()) PostMessageW(hwnd, WM_REFRESH_ASYNC, 1, 0);
+            }
+        }
         break;
     }
     case WM_DRAWITEM: {
@@ -2995,6 +3000,50 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                     PostMessageW(hwnd, WM_APP+7, 0, 0);
                 }).detach();
             }
+        }
+        else if (id == IDC_CHECK_SHOW_SKIPPED) {
+            HWND hChk = GetDlgItem(hwnd, IDC_CHECK_SHOW_SKIPPED);
+            BOOL show = (SendMessageW(hChk, BM_GETCHECK, 0, 0) == BST_CHECKED);
+            HWND hListLocal = GetDlgItem(hwnd, IDC_LISTVIEW);
+            if (show) {
+                // populate list with skipped entries
+                auto skipped = LoadSkippedMap();
+                ListView_DeleteAllItems(hListLocal);
+                LVITEMW lvi{}; lvi.mask = LVIF_TEXT | LVIF_PARAM;
+                int i = 0;
+                for (auto &p : skipped) {
+                    std::wstring idw = Utf8ToWide(p.first);
+                    std::wstring verw = Utf8ToWide(p.second);
+                    lvi.iItem = i; lvi.iSubItem = 0; lvi.pszText = (LPWSTR)idw.c_str(); lvi.lParam = -1;
+                    SendMessageW(hListLocal, LVM_INSERTITEMW, 0, (LPARAM)&lvi);
+                    LVITEMW lv2{}; lv2.mask = LVIF_TEXT; lv2.iItem = i; lv2.iSubItem = 2; lv2.pszText = (LPWSTR)verw.c_str(); SendMessageW(hListLocal, LVM_SETITEMW, 0, (LPARAM)&lv2);
+                    ++i;
+                }
+                // show Unskip button if we have skipped entries
+                HWND hUn = GetDlgItem(hwnd, IDC_BTN_UNSKIP);
+                if (hUn) {
+                    if (i > 0) { ShowWindow(hUn, SW_SHOW); EnableWindow(hUn, TRUE); }
+                    else { ShowWindow(hUn, SW_HIDE); }
+                }
+            } else {
+                // normal refresh to repopulate list
+                if (!g_refresh_in_progress.load()) PostMessageW(hwnd, WM_REFRESH_ASYNC, 1, 0);
+                HWND hUn = GetDlgItem(hwnd, IDC_BTN_UNSKIP); if (hUn) ShowWindow(hUn, SW_HIDE);
+            }
+            break;
+        } else if (id == IDC_BTN_UNSKIP) {
+            // Unskip selected item in list
+            HWND hListLocal = GetDlgItem(hwnd, IDC_LISTVIEW);
+            int sel = ListView_GetNextItem(hListLocal, -1, LVNI_SELECTED);
+            if (sel >= 0) {
+                wchar_t buf[512]; LVITEMW lvi{}; lvi.iItem = sel; lvi.iSubItem = 0; lvi.cchTextMax = _countof(buf); lvi.pszText = buf; lvi.mask = LVIF_TEXT; SendMessageW(hListLocal, LVM_GETITEMW, 0, (LPARAM)&lvi);
+                std::string idUtf8 = WideToUtf8(std::wstring(buf));
+                if (RemoveSkippedEntry(idUtf8)) {
+                    // trigger immediate refresh scan
+                    if (!g_refresh_in_progress.load()) PostMessageW(hwnd, WM_REFRESH_ASYNC, 1, 0);
+                }
+            }
+            break;
         }
         break;
     }
