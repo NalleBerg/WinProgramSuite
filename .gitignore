@@ -8,8 +8,10 @@
 # Ignore user-specific files
 *.user
 *.suo
-wup_run_log.txt
-wup_winget_list_fallback.txt
- 
+
+# Ignore WinUpdate runtime logs and winget fallback/raw captures
+# All files beginning with "wup" (e.g., wup_run_log.txt)
+wup*.*
+
 # Packaged installer staging dir
 /WinUpdate/
