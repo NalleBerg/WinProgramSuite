@@ -238,11 +238,19 @@ void PurgeObsoleteSkips(const std::map<std::string,std::string> &currentAvail) {
             AppendLog(std::string("AppendSkippedRaw: DeleteFileA returned error ") + std::to_string(err) + "\n");
         }
         BOOL mv = MoveFileA(tmp.c_str(), ini.c_str());
-        if (!mv) {
-            DWORD err = GetLastError();
-            AppendLog(std::string("AppendSkippedRaw: MoveFileA failed err=") + std::to_string(err) + "\n");
-        } else {
-            AppendLog(std::string("AppendSkippedRaw: appended skipped entry: ") + identifier + "\t" + version + " to " + ini + "\n");
-        }
-        return mv != 0;
+            if (!mv) {
+                DWORD err = GetLastError();
+                AppendLog(std::string("AppendSkippedRaw: MoveFileA failed err=") + std::to_string(err) + "\n");
+            } else {
+                AppendLog(std::string("AppendSkippedRaw: appended skipped entry: ") + identifier + "\t" + version + " to " + ini + "\n");
+                // Notify main window to refresh so the UI rescans the updated INI
+                try {
+                    HWND hMain = FindWindowW(L"WinUpdateClass", NULL);
+                    if (hMain) {
+                        PostMessageW(hMain, WM_APP + 1, 1, 0);
+                        AppendLog(std::string("AppendSkippedRaw: posted WM_REFRESH_ASYNC to main window\n"));
+                    }
+                } catch(...) {}
+            }
+            return mv != 0;
     }
