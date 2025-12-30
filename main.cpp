@@ -2214,11 +2214,15 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                 }
                 AppendLog(std::string("WM_COPYDATA: mapping appname->id='") + id + "' avail='" + ver + "'\n");
                 AppendLog(std::string("WM_COPYDATA: AddSkippedEntry returned ") + (added?"true":"false") + "\n");
-                if (added) {
-                    try { g_skipped_versions[id] = ver; SaveSkipConfig(g_locale); } catch(...) {}
-                    HWND hUn = GetDlgItem(hwnd, IDC_BTN_UNSKIP); if (hUn) { ShowWindow(hUn, SW_SHOW); EnableWindow(hUn, TRUE); }
-                    if (!g_refresh_in_progress.load()) PostMessageW(hwnd, WM_REFRESH_ASYNC, 1, 0);
-                }
+                try {
+                    if (added) {
+                        g_skipped_versions[id] = ver;
+                        HWND hUn = GetDlgItem(hwnd, IDC_BTN_UNSKIP); if (hUn) { ShowWindow(hUn, SW_SHOW); EnableWindow(hUn, TRUE); }
+                    }
+                } catch(...) {}
+                // Regardless of whether we resolved an id, trigger a UI refresh so the list is rescanned
+                try { SaveSkipConfig(g_locale); } catch(...) {}
+                if (!g_refresh_in_progress.load()) SendMessageW(hwnd, WM_REFRESH_ASYNC, 1, 0);
             }
         } catch(...) {}
         break;
@@ -2390,7 +2394,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                                         PopulateListView(hListLocal);
                                         // After the user confirms a Skip, trigger a background rescan
                                         // so the list will be refreshed for subsequent UI changes.
-                                        if (!g_refresh_in_progress.load()) PostMessageW(hwnd, WM_REFRESH_ASYNC, 1, 0);
+                                        if (!g_refresh_in_progress.load()) SendMessageW(hwnd, WM_REFRESH_ASYNC, 1, 0);
                                     }
                                 } else {
                                     MessageBoxW(hwnd, L"Unable to determine version to skip.", t("app_title").c_str(), MB_OK | MB_ICONWARNING);
