@@ -265,6 +265,18 @@ void PurgeObsoleteSkips(const std::map<std::string,std::string> &currentAvail) {
                 // search g_packages for matching display name (exact or case-insensitive/substring)
                 try {
                     std::string idFound;
+                    // quick canonical map for known display names -> ids
+                    auto GetCanonicalIdForName = [](const std::string &name)->std::string {
+                        std::string nl = name; for (auto &c : nl) c = (char)tolower((unsigned char)c);
+                        // entries: substring match -> id
+                        const std::vector<std::pair<std::string,std::string>> canon = {
+                            {"vulkan sdk", "KhronosGroup.VulkanSDK"},
+                            {"khronos vulkan", "KhronosGroup.VulkanSDK"}
+                        };
+                        for (auto &p : canon) if (nl.find(p.first) != std::string::npos) return p.second;
+                        return std::string();
+                    };
+
                     // normalize: remove trailing version-like tokens from identifier (e.g. "Vulkan SDK 1.4.328.1" -> "Vulkan SDK")
                     auto toLower = [](const std::string &s){ std::string r = s; for (auto &c : r) c = (char)tolower((unsigned char)c); return r; };
                     auto isVersionToken = [](const std::string &t){ if (t.empty()) return false; for (char c : t) { if (!(isdigit((unsigned char)c) || c=='.' || c=='-' || c=='_')) return false; } return true; };
@@ -288,6 +300,11 @@ void PurgeObsoleteSkips(const std::map<std::string,std::string> &currentAvail) {
                     auto tokenize = [](const std::string &x){ std::vector<std::string> out; std::string cur; for (char c : x) { if (isalnum((unsigned char)c)) cur.push_back((char)tolower((unsigned char)c)); else { if (!cur.empty()) { out.push_back(cur); cur.clear(); } } } if (!cur.empty()) out.push_back(cur); return out; };
 
                     std::string ident_stripped = stripTrailingVersionTokens(identifier);
+                    // check canonical map first
+                    try {
+                        std::string canon = GetCanonicalIdForName(ident_stripped);
+                        if (!canon.empty()) idFound = canon;
+                    } catch(...) {}
                     std::string name_l = toLower(ident_stripped);
                     auto tokens = tokenize(name_l);
                     {
@@ -450,6 +467,20 @@ void PurgeObsoleteSkips(const std::map<std::string,std::string> &currentAvail) {
                     std::string name_l = toLower(ident_stripped);
                     auto tokens = tokenize(name_l);
                     std::string idFound;
+                    // canonical map check
+                    try {
+                        auto GetCanonicalIdForName_local = [](const std::string &name)->std::string {
+                            std::string nl = name; for (auto &c : nl) c = (char)tolower((unsigned char)c);
+                            const std::vector<std::pair<std::string,std::string>> canon = {
+                                {"vulkan sdk", "KhronosGroup.VulkanSDK"},
+                                {"khronos vulkan", "KhronosGroup.VulkanSDK"}
+                            };
+                            for (auto &p : canon) if (nl.find(p.first) != std::string::npos) return p.second;
+                            return std::string();
+                        };
+                        std::string c = GetCanonicalIdForName_local(ident_stripped);
+                        if (!c.empty()) idFound = c;
+                    } catch(...) {}
                     {
                         std::lock_guard<std::mutex> lk(g_packages_mutex);
                         // exact
