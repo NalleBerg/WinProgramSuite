@@ -7,7 +7,7 @@ GIMP 3.0.6-1                      GIMP.GIMP.3                       3.0.6.1     
 Git                               ARP\Machine\X64\Git_is1           2.51.2                                       
 Mozilla Thunderbird (x64 nb-NO)   Mozilla.Thunderbird.nb-NO         146.0                              146.0.1   winget
 Mozilla Maintenance Service       ARP\Machine\X64\MozillaMaintenan… 146.0                                        
-Notepad++ (64-bit x64)            Notepad++.Notepad++               8.8.9                                        winget
+Notepad++ (64-bit x64)            Notepad++.Notepad++               8.8.9                              8.9       winget
 RustDesk                          RustDesk.RustDesk                 1.4.1                                        winget
 SteelSeries GG 101.0.0            SteelSeries.GG                    101.0.0                                      winget
 Total Commander 64-bit (Remove o… Ghisler.TotalCommander            11.56                                        winget
@@ -30,4 +30,3 @@ Gadwin PrintScreen (64-Bit)       Gadwin.PrintScreen                6.5.0.0     
 NVIDIA Grafikkdriver 511.65       ARP\Machine\X64\{B2FE1952-0186-4… 511.65                                       
 Eclipse Temurin JRE with Hotspot… EclipseAdoptium.Temurin.8.JRE     8.0.472.8                                    winget
 Eclipse Temurin JRE with Hotspot… EclipseAdoptium.Temurin.8.JRE     8.0.462.8                                    winget
-Eclipse Temurin JDK with Hotspot… EclipseAdoptium.Temurin.11.JDK    11.0.29.7                             
