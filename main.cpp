@@ -2086,25 +2086,18 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                 }
             }
         }
-        // After refresh, prune skip config entries if versions advanced (use cached probe)
+        // After refresh, let the central skip management purge obsolete entries
         try {
-            auto avail = GetAvailableVersionsCached();
-            bool changed = false;
-            for (auto it = g_skipped_versions.begin(); it != g_skipped_versions.end();) {
-                const std::string id = it->first;
-                const std::string ver = it->second;
-                auto f = avail.find(id);
-                if (f == avail.end()) {
-                    it = g_skipped_versions.erase(it);
-                    changed = true;
-                } else {
-                    if (f->second != ver) {
-                        it = g_skipped_versions.erase(it);
-                        changed = true;
-                    } else ++it;
-                }
-            }
-            if (changed) SaveSkipConfig(g_locale);
+            auto avail_u = GetAvailableVersionsCached();
+            std::map<std::string,std::string> avail_map(avail_u.begin(), avail_u.end());
+            // Purge entries stored in per-user skip INI that are obsolete (available > skipped)
+            PurgeObsoleteSkips(avail_map);
+            // Reload per-user skipped map into in-memory `g_skipped_versions` so UI logic uses current state
+            try {
+                auto m = LoadSkippedMap();
+                g_skipped_versions.clear();
+                for (auto &p : m) g_skipped_versions[p.first] = p.second;
+            } catch(...) {}
             if (hList) PopulateListView(hList);
         } catch(...) {}
         // Ensure main window is visible and front-most after a refresh completes
