@@ -267,14 +267,8 @@ bool ShowSkipConfirm(HWND parent, const std::wstring &appname, const std::wstrin
         }
         // read result (set by window proc)
         bool res = (result == 1);
-        if (res) {
-            // send WM_COPYDATA to main window so main persists the skip
-            try {
-                std::string payload = "WUP_SKIP\n" + appn_utf8 + "\n" + ver_utf8 + "\n";
-                COPYDATASTRUCT cds{}; cds.dwData = 0x57475053; cds.cbData = (DWORD)(payload.size()+1); cds.lpData = (PVOID)payload.c_str();
-                HWND target = FindWindowW(L"WinUpdateClass", NULL); if (!target) target = parent; SendMessageA((HWND)target, WM_COPYDATA, (WPARAM)NULL, (LPARAM)&cds);
-            } catch(...) {}
-        }
+        // DON'T send WM_COPYDATA here - it will be handled by the caller
+        // This avoids the freeze caused by triggering refresh from within modal loop
         return res;
     
 }

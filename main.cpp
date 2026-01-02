@@ -77,9 +77,12 @@ static std::vector<std::pair<std::string,std::string>> ParseRawWingetTextInMemor
 static std::unordered_map<std::string,std::string> MapInstalledVersions();
 
 
-// Globals
-static std::vector<std::pair<std::string,std::string>> g_packages;
-static std::mutex g_packages_mutex;
+// Globals (non-static for cross-file access - defined in src/globals.cpp)
+extern std::vector<std::pair<std::string,std::string>> g_packages;
+extern std::mutex g_packages_mutex;
+extern std::string g_last_winget_raw;
+extern std::mutex g_last_winget_raw_mutex;
+extern std::atomic<bool> g_refresh_in_progress;
 static std::set<std::string> g_not_applicable_ids;
 // per-locale skipped versions: id -> version
 static std::unordered_map<std::string,std::string> g_skipped_versions;
@@ -92,7 +95,6 @@ static std::mutex g_versions_mutex;
 static std::unordered_map<std::string,std::string> g_startup_avail_versions;
 static std::unordered_map<std::string,std::string> g_startup_inst_versions;
 static std::mutex g_startup_versions_mutex;
-static std::atomic<bool> g_refresh_in_progress{false};
 static std::wstring g_last_install_outfile;
 static HWND g_hTitle = NULL;
 static HWND g_hLastUpdated = NULL;
@@ -1948,35 +1950,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
         std::thread([hwnd, manual]() {
             std::vector<std::pair<std::string,std::string>> results;
 
-            // Fast-path: prefer a cached `winget list` and run `winget upgrade` with a short timeout.
-            std::string listOut;
-            try {
-                namespace fs = std::filesystem;
-                fs::path listPath = fs::current_path() / "wup_winget_list_fallback.txt";
-                if (fs::exists(listPath)) {
-                    try {
-                        auto ftime = fs::last_write_time(listPath);
-                        using file_clock = decltype(ftime)::clock;
-                        auto file_now = file_clock::now();
-                        auto sys_now = std::chrono::system_clock::now();
-                        auto sctp = sys_now + (ftime - file_now);
-                        auto age = std::chrono::system_clock::now() - sctp;
-                        if (age < std::chrono::seconds(60)) {
-                            listOut = ReadFileUtf8(listPath.wstring());
-                        }
-                    } catch(...) {}
-                }
-            } catch(...) {}
-
-            if (listOut.empty()) {
-                auto rlist = RunProcessCaptureExitCode(L"winget list", 1000);
-                listOut = rlist.second;
-                if (!listOut.empty()) {
-                    try { std::ofstream ofs("wup_winget_list_fallback.txt", std::ios::binary); if (ofs) ofs << listOut; } catch(...) {}
-                }
-            }
-
-            // Run winget upgrade with a 2s timeout (fast). If it returns quickly, parse it; if it times out/empty, treat list candidates as NotApplicable.
+            // Run winget upgrade with a 5s timeout (fast). If it returns quickly, parse it; if it times out/empty, try longer.
             auto rup = RunProcessCaptureExitCode(L"winget upgrade", 5000);
             std::string out = rup.second;
             bool timedOut = (rup.first == -2);
@@ -1988,15 +1962,18 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                     timedOut = false;
                 }
             }
+            
+            // Store output in memory for AppendSkippedRaw to use
+            if (!out.empty()) {
+                std::lock_guard<std::mutex> lk(g_last_winget_raw_mutex);
+                g_last_winget_raw = out;
+                AppendLog(std::string("WM_REFRESH_ASYNC: stored winget output in memory, size=") + std::to_string((int)out.size()) + "\n");
+            }
             if (!out.empty()) {
                 // Prefer the in-memory parser chain to extract Id/Name pairs
                 auto vec = ParseRawWingetTextInMemory(out);
                 std::set<std::pair<std::string,std::string>> found;
                 for (auto &p : vec) found.emplace(p.first, p.second);
-                // fallback: if we still have nothing and have a cached list, try the list-based mapping
-                if (found.empty() && !listOut.empty()) {
-                    FindUpdatesUsingKnownList(listOut, out, found);
-                }
                 for (auto &p : found) results.emplace_back(p.first, p.second);
             }
 
@@ -2025,37 +2002,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                 } catch(...) {}
             } catch(...) {}
 
-            if (out.empty() || timedOut) {
-                // As a fast fallback: use the cached list to identify candidates and mark them NotApplicable (do not perform slow probes).
-                if (!listOut.empty()) {
-                    std::istringstream lss(listOut);
-                    std::string ln;
-                    std::regex anyRe("([\\S ]+?)\\s+([^\\s]+)\\s+(\\S+)\\s+(\\S+)");
-                    std::smatch m;
-                    std::set<std::string> localNA;
-                    while (std::getline(lss, ln)) {
-                        if (std::regex_search(ln, m, anyRe)) {
-                            std::string id = m[2].str();
-                            std::string installed = m[3].str();
-                            std::string available = m[4].str();
-                            try { if (CompareVersions(installed, available) < 0) localNA.insert(id); } catch(...) {}
-                        }
-                    }
-                    if (!localNA.empty()) {
-                        std::lock_guard<std::mutex> lk(g_packages_mutex);
-                        g_not_applicable_ids = localNA;
-                    }
-                }
-                // If winget upgrade returned empty and did NOT simply time out, remove stale fallback list
-                // If it timed out, keep the fallback list so the UI can present candidates instead of claiming up-to-date.
-                if (!timedOut) {
-                    try {
-                        namespace fs = std::filesystem;
-                        fs::path listPath = fs::current_path() / "wup_winget_list_fallback.txt";
-                        if (fs::exists(listPath)) fs::remove(listPath);
-                    } catch(...) {}
-                }
-            }
+            // If winget upgrade failed or timed out, results will be empty
+            // No fallback needed - user can simply refresh again
             auto *pv = new std::vector<std::pair<std::string,std::string>>(std::move(results));
             // propagate manual flag to the WM_REFRESH_DONE handler via wParam so UI can decide whether to show popups
             PostMessageA(hwnd, WM_REFRESH_DONE, manual ? 1 : 0, (LPARAM)pv);
@@ -2193,9 +2141,20 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                 }
                 bool added = false;
                 if (!id.empty()) {
-                    try { added = AddSkippedEntry(id, ver); } catch(...) { added = false; }
+                    // Get full display name from g_packages using the resolved ID
+                    std::string fullDisplayName = appn;
+                    try {
+                        std::lock_guard<std::mutex> lk(g_packages_mutex);
+                        for (auto &pkg : g_packages) {
+                            if (pkg.first == id) {
+                                fullDisplayName = pkg.second;
+                                break;
+                            }
+                        }
+                    } catch(...) {}
+                    try { added = AddSkippedEntry(id, ver, fullDisplayName); } catch(...) { added = false; }
                 }
-                AppendLog(std::string("WM_COPYDATA: mapping appname->id='") + id + "' avail='" + ver + "'\n");
+                AppendLog(std::string("WM_COPYDATA: mapping appname->") + "id='" + id + "' avail='" + ver + "'\n");
                 AppendLog(std::string("WM_COPYDATA: AddSkippedEntry returned ") + (added?"true":"false") + "\n");
                 try {
                         if (added) {
@@ -2205,7 +2164,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                 } catch(...) {}
                 // Regardless of whether we resolved an id, trigger a UI refresh so the list is rescanned
                 try { SaveSkipConfig(g_locale); } catch(...) {}
-                if (!g_refresh_in_progress.load()) SendMessageW(hwnd, WM_REFRESH_ASYNC, 1, 0);
+                if (!g_refresh_in_progress.load()) PostMessageW(hwnd, WM_REFRESH_ASYNC, 1, 0);
             }
         } catch(...) {}
         break;
@@ -2434,7 +2393,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                                         PopulateListView(hListLocal);
                                         // After the user confirms a Skip, trigger a background rescan
                                         // so the list will be refreshed for subsequent UI changes.
-                                        if (!g_refresh_in_progress.load()) SendMessageW(hwnd, WM_REFRESH_ASYNC, 1, 0);
+                                        if (!g_refresh_in_progress.load()) PostMessageW(hwnd, WM_REFRESH_ASYNC, 1, 0);
                                     }
                                 } else {
                                     MessageBoxW(hwnd, L"Unable to determine version to skip.", t("app_title").c_str(), MB_OK | MB_ICONWARNING);

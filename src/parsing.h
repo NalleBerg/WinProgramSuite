@@ -5,10 +5,14 @@
 #include <utility>
 #include <unordered_map>
 #include <mutex>
+#include <atomic>
 
 // Externs for globals defined in main.cpp used by parsing functions
 extern std::vector<std::pair<std::string,std::string>> g_packages;
 extern std::mutex g_packages_mutex;
+extern std::string g_last_winget_raw;
+extern std::mutex g_last_winget_raw_mutex;
+extern std::atomic<bool> g_refresh_in_progress;
 
 // Parsing helpers
 void ParseWingetTextForUpdates(const std::string &text);

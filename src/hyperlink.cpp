@@ -498,12 +498,29 @@ static LRESULT CALLBACK Hyperlink_ListSubclassProc(HWND hwnd, UINT uMsg, WPARAM 
                                 id = resolveId(appn_utf8, pi);
                             }
                             if (!id.empty()) {
-                                AppendLog(std::string("[hyperlink] pre-send local AddSkippedEntry id=") + id + " ver=" + ver_utf8 + "\n");
-                                bool ok = AddSkippedEntry(id, ver_utf8);
+                                // Get the full display name from g_packages using the resolved ID
+                                std::string fullDisplayName = appn_utf8;
+                                try {
+                                    std::lock_guard<std::mutex> lk(g_packages_mutex);
+                                    for (auto &pkg : g_packages) {
+                                        if (pkg.first == id) {
+                                            fullDisplayName = pkg.second;
+                                            break;
+                                        }
+                                    }
+                                } catch(...) {}
+                                AppendLog(std::string("[hyperlink] pre-send local AddSkippedEntry id=") + id + " ver=" + ver_utf8 + " name=" + fullDisplayName + "\n");
+                                bool ok = AddSkippedEntry(id, ver_utf8, fullDisplayName);
                                 AppendLog(std::string("[hyperlink] pre-send AddSkippedEntry result=") + (ok?"OK":"FAIL") + "\n");
-                                PostMessageW(mainWnd, WM_APP + 1, (WPARAM)1, (LPARAM)0);
+                                // Don't send WM_COPYDATA here - just let the post-dialog code handle refresh
                             } else {
                                 AppendLog("[hyperlink] pre-send: could not resolve id for local persistence, appending raw\n");
+                                // Check if refresh is in progress before allowing skip
+                                if (g_refresh_in_progress.load()) {
+                                    AppendLog("[hyperlink] Skip blocked - refresh in progress\n");
+                                    MessageBoxA(NULL, "Please wait for the list to finish loading.", "WinUpdate", MB_OK | MB_ICONINFORMATION);
+                                    return 0;  // Return proper LRESULT
+                                }
                                 try {
                                     bool ok2 = AppendSkippedRaw(appn_utf8, ver_utf8);
                                     AppendLog(std::string("[hyperlink] pre-send AppendSkippedRaw result=") + (ok2?"OK":"FAIL") + "\n");
@@ -511,46 +528,11 @@ static LRESULT CALLBACK Hyperlink_ListSubclassProc(HWND hwnd, UINT uMsg, WPARAM 
                             }
                         } catch(...) { AppendLog("[hyperlink] pre-send local AddSkippedEntry threw\n"); }
 
-                        COPYDATASTRUCT cds{}; cds.dwData = 0x57475053; cds.cbData = (DWORD)(payload.size()+1); cds.lpData = (PVOID)payload.c_str();
-                        LRESULT r = SendMessageA((HWND)mainWnd, WM_COPYDATA, (WPARAM)NULL, (LPARAM)&cds);
-                        AppendLog(std::string("[hyperlink] SendMessageA(WM_COPYDATA) returned ") + std::to_string((long long)r) + "\n");
-                        // Also perform local AddSkippedEntry to ensure persistence if WM_COPYDATA
-                        // route fails for any reason. Find package id by displayed name.
-                        try {
-                            auto resolveId2 = [&](const std::string &name, int index)->std::string {
-                                std::string out;
-                                try {
-                                    std::lock_guard<std::mutex> lk(g_packages_mutex);
-                                    if (index >= 0 && index < (int)g_packages.size()) out = g_packages[index].first;
-                                    if (!out.empty()) return out;
-                                    for (int i = 0; i < (int)g_packages.size(); ++i) if (g_packages[i].second == name) return g_packages[i].first;
-                                    std::string name_l = name; for (auto &c : name_l) c = (char)tolower((unsigned char)c);
-                                    for (int i = 0; i < (int)g_packages.size(); ++i) {
-                                        std::string nm = g_packages[i].second; std::string nm_l = nm; for (auto &c : nm_l) c = (char)tolower((unsigned char)c);
-                                        if (nm_l == name_l || nm_l.find(name_l) != std::string::npos || name_l.find(nm_l) != std::string::npos) return g_packages[i].first;
-                                    }
-                                } catch(...) {}
-                                return std::string();
-                            };
-                            std::string id = resolveId2(appn_utf8, (int)pkgIdx);
-                            if (id.empty()) {
-                                AppendLog("[hyperlink] local AddSkippedEntry: attempting repopulate from raw winget\n");
-                                try { std::string raw = ReadMostRecentRawWinget(); if (!raw.empty()) { ParseWingetTextForPackages(raw); AppendLog(std::string("[hyperlink] repopulated g_packages size=") + std::to_string((int)g_packages.size()) + "\n"); } } catch(...) { AppendLog("[hyperlink] repopulate threw\n"); }
-                                id = resolveId2(appn_utf8, (int)pkgIdx);
-                            }
-                            if (!id.empty()) {
-                                AppendLog(std::string("[hyperlink] local AddSkippedEntry attempt id=") + id + " ver=" + ver_utf8 + "\n");
-                                bool ok = AddSkippedEntry(id, ver_utf8);
-                                AppendLog(std::string("[hyperlink] local AddSkippedEntry result=") + (ok?"OK":"FAIL") + "\n");
-                                // request UI refresh (WM_APP+1)
-                                PostMessageW(mainWnd, WM_APP + 1, (WPARAM)1, (LPARAM)0);
-                            } else {
-                                AppendLog("[hyperlink] local AddSkippedEntry: could not resolve id, skipping second raw append\n");
-                            }
-                        } catch(...) { AppendLog("[hyperlink] local AddSkippedEntry failed\n"); }
-                    } catch(...) {
-                        AppendLog("[hyperlink] WM_COPYDATA send failed\n");
-                    }
+                        // Skip sending WM_COPYDATA since we already persisted locally
+                        // Just trigger an asynchronous refresh
+                        PostMessageW(mainWnd, WM_APP + 1, (WPARAM)1, (LPARAM)0);  // WM_REFRESH_ASYNC
+                        AppendLog("[hyperlink] Posted WM_REFRESH_ASYNC after skip\n");
+                    } catch(...) { AppendLog("[hyperlink] Skip handling threw exception\n"); }
                 } else {
                     AppendLog("[hyperlink] failed to find main window to post skip message\n");
                 }

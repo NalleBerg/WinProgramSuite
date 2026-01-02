@@ -48,6 +48,29 @@ static std::wstring Utf8ToWide(const std::string &s) {
     return out;
 }
 
+// Helper to run a process and capture output
+static std::pair<int,std::string> RunProcessCaptureExitCodeLocal(const std::wstring &cmd, int timeoutMs = 5000) {
+    std::pair<int,std::string> res = {-1, std::string()};
+    SECURITY_ATTRIBUTES sa{}; sa.nLength = sizeof(sa); sa.bInheritHandle = TRUE; sa.lpSecurityDescriptor = NULL;
+    HANDLE hRead = NULL, hWrite = NULL;
+    if (!CreatePipe(&hRead, &hWrite, &sa, 0)) return res;
+    SetHandleInformation(hRead, HANDLE_FLAG_INHERIT, 0);
+    STARTUPINFOW si{}; si.cb = sizeof(si);
+    si.dwFlags |= STARTF_USESTDHANDLES; si.hStdOutput = hWrite; si.hStdError = hWrite; si.hStdInput = NULL;
+    PROCESS_INFORMATION pi{};
+    std::wstring cmdCopy = cmd;
+    if (!CreateProcessW(NULL, &cmdCopy[0], NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) { CloseHandle(hWrite); CloseHandle(hRead); return res; }
+    CloseHandle(hWrite);
+    DWORD wait = WaitForSingleObject(pi.hProcess, timeoutMs > 0 ? (DWORD)timeoutMs : INFINITE);
+    if (wait == WAIT_TIMEOUT) { TerminateProcess(pi.hProcess, 1); res.first = -2; }
+    else { DWORD exitCode = 0; GetExitCodeProcess(pi.hProcess, &exitCode); res.first = (int)exitCode; }
+    std::string out; const DWORD bufSize = 4096; char buf[bufSize]; DWORD read = 0;
+    while (ReadFile(hRead, buf, bufSize, &read, NULL) && read > 0) out.append(buf, buf + read);
+    CloseHandle(hRead); CloseHandle(pi.hProcess); CloseHandle(pi.hThread);
+    res.second = out; return res;
+}
+
+
 // Modal dialog implemented with a simple window and listbox
 
 // Entry type used by the dialog
@@ -318,31 +341,81 @@ bool ShowUnskipDialog(HWND parent) {
     // Prepare list of entries (id, display, version)
     struct Entry { std::string id; std::string name; std::string ver; };
     std::vector<Entry> entries;
-    // try to resolve display names from g_packages (extern provided by parsing.h)
+    
+    // Build a map from the in-memory winget output to get ALL package names (including skipped)
+    std::map<std::string, std::string> idToName; // id -> display name
+    try {
+        std::string raw;
+        {
+            std::lock_guard<std::mutex> lk(g_last_winget_raw_mutex);
+            raw = g_last_winget_raw;
+        }
+        if (!raw.empty()) {
+            AppendLog("[unskip] Parsing in-memory winget output for display names\n");
+            std::istringstream iss(raw);
+            std::string line;
+            bool pastHeader = false;
+            while (std::getline(iss, line)) {
+                while (!line.empty() && (line.back() == '\r' || line.back() == '\n')) line.pop_back();
+                if (!pastHeader) {
+                    if (line.find("----") != std::string::npos) { pastHeader = true; }
+                    continue;
+                }
+                if (line.find("upgrades available") != std::string::npos) break;
+                if (line.empty()) continue;
+                
+                // Split into tokens
+                std::istringstream ls(line);
+                std::vector<std::string> tokens;
+                std::string tok;
+                while (ls >> tok) tokens.push_back(tok);
+                
+                if (tokens.size() < 5) continue;
+                
+                size_t n = tokens.size();
+                // Right to left: Source, Available, Version, Id, then Name is everything else
+                std::string id = tokens[n-4];
+                std::string name;
+                for (size_t i = 0; i + 4 < n; ++i) {
+                    if (i > 0) name += " ";
+                    name += tokens[i];
+                }
+                if (!name.empty() && !id.empty()) {
+                    idToName[id] = name;
+                    AppendLog(std::string("[unskip] In-memory: id='") + id + "' name='" + name + "'\n");
+                }
+            }
+        }
+    } catch(...) {}
+    
+    // Get display names from memory first, then in-memory winget output, then g_packages, then prettify
     for (auto &kv : skipped) {
-        Entry e; e.id = kv.first; e.ver = kv.second; e.name = kv.first;
-        try {
-            std::lock_guard<std::mutex> lk(g_packages_mutex);
-            for (auto &p : g_packages) {
-                if (p.first == kv.first) { e.name = p.second; break; }
+        Entry e;
+        // Trim the key (id might have trailing spaces from INI parsing)
+        e.id = kv.first;
+        auto trim = [](std::string s){ size_t a = s.find_first_not_of(" \t\r\n"); if (a==std::string::npos) return std::string(); size_t b = s.find_last_not_of(" \t\r\n"); return s.substr(a, b-a+1); };
+        e.id = trim(e.id);
+        e.ver = kv.second;
+        // Try memory first
+        e.name = GetDisplayNameForId(e.id);
+        // If still same as id, try in-memory winget output
+        if (e.name == e.id) {
+            auto it = idToName.find(e.id);
+            if (it != idToName.end()) {
+                e.name = it->second;
+                AppendLog(std::string("[unskip] Using in-memory name='") + e.name + "' for id='" + e.id + "'\n");
             }
-        } catch(...) {}
+        }
+        // If still same as id, try g_packages
+        if (e.name == e.id) {
+            try {
+                std::lock_guard<std::mutex> lk(g_packages_mutex);
+                for (auto &p : g_packages) {
+                    if (p.first == e.id) { e.name = p.second; break; }
+                }
+            } catch(...) {}
+        }
         entries.push_back(e);
-    }
-
-    // If any entry still shows id as name, attempt a fresh winget probe to populate g_packages
-    bool needProbe = false;
-    for (auto &e : entries) if (e.name == e.id) { needProbe = true; break; }
-    if (needProbe) {
-        try {
-            // Re-check g_packages via parsing of most recent raw if available
-            std::string raw = ReadMostRecentRawWinget();
-            if (!raw.empty()) ParseWingetTextForPackages(raw);
-            // update names where possible
-            for (auto &e : entries) {
-                try { std::lock_guard<std::mutex> lk(g_packages_mutex); for (auto &p : g_packages) if (p.first == e.id) { e.name = p.second; break; } } catch(...) {}
-            }
-        } catch(...) {}
     }
 
     // Helper to prettify an id into a readable name if no display name found
@@ -397,7 +470,7 @@ bool ShowUnskipDialog(HWND parent) {
     if (hDlg && IsWindow(hDlg)) {
         SetWindowPos(hDlg, NULL, 0, 0, W, H, SWP_NOMOVE | SWP_NOZORDER);
     }
-    HWND hList = CreateWindowExW(0, L"LISTBOX", NULL, WS_CHILD | WS_VISIBLE | LBS_STANDARD | LBS_NOTIFY | WS_VSCROLL | WS_BORDER, 12, 12, W-24, listH, hDlg, NULL, GetModuleHandleW(NULL), NULL);
+    HWND hList = CreateWindowExW(0, L"LISTBOX", NULL, WS_CHILD | WS_VISIBLE | LBS_NOTIFY | WS_VSCROLL | WS_BORDER, 12, 12, W-24, listH, hDlg, NULL, GetModuleHandleW(NULL), NULL);
     // fill listbox and keep mapping: show package display name first, then version (no id)
     for (size_t i = 0; i < entries.size(); ++i) {
         std::string line = entries[i].name + "  -  " + entries[i].ver;

@@ -3,7 +3,11 @@
 #include <map>
 
 // Add a skipped entry (id -> version). Returns true on success.
-bool AddSkippedEntry(const std::string &id, const std::string &version);
+// displayName is stored in memory for display purposes (not saved to .ini)
+bool AddSkippedEntry(const std::string &id, const std::string &version, const std::string &displayName = "");
+
+// Get display name for an ID from memory (returns id if not found)
+std::string GetDisplayNameForId(const std::string &id);
 
 // Remove a skipped entry by id. Returns true if removed.
 bool RemoveSkippedEntry(const std::string &id);

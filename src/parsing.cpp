@@ -256,152 +256,89 @@ std::string ReadMostRecentRawWinget() {
 void ParseWingetTextForPackages(const std::string &text) {
     std::lock_guard<std::mutex> lk(g_packages_mutex);
     g_packages.clear();
+    
+    AppendLog(std::string("ParseWingetTextForPackages: input text length=") + std::to_string((int)text.size()) + "\n");
+    
     std::istringstream iss(text);
-    std::vector<std::string> lines;
     std::string line;
+    bool pastHeader = false;
+    int lineNum = 0;
+    
     while (std::getline(iss, line)) {
-        while (!line.empty() && (line.back()=='\r' || line.back()=='\n')) line.pop_back();
-        lines.push_back(line);
-    }
-    if (lines.empty()) return;
-
-    int headerIdx = -1;
-    int sepIdx = -1;
-    for (int i = 0; i < (int)lines.size(); ++i) {
-        if (lines[i].find("----") != std::string::npos) {
-            sepIdx = i;
+        lineNum++;
+        // Remove trailing newlines
+        while (!line.empty() && (line.back() == '\r' || line.back() == '\n')) line.pop_back();
+        
+        // Skip until we find the separator line
+        if (!pastHeader) {
+            if (line.find("----") != std::string::npos) {
+                pastHeader = true;
+                AppendLog(std::string("ParseWingetTextForPackages: found separator at line ") + std::to_string(lineNum) + "\n");
+            }
+            continue;
+        }
+        
+        // Stop at footer
+        if (line.find("upgrades available") != std::string::npos) {
+            AppendLog(std::string("ParseWingetTextForPackages: found footer at line ") + std::to_string(lineNum) + "\n");
             break;
         }
-    }
-    if (sepIdx <= 0) return;
-    headerIdx = sepIdx - 1;
-    std::string header = lines[headerIdx];
-
-    auto trim = [](std::string s){ while(!s.empty() && isspace((unsigned char)s.front())) s.erase(s.begin()); while(!s.empty() && isspace((unsigned char)s.back())) s.pop_back(); return s; };
-
-    std::vector<int> colStarts;
-    std::vector<std::string> colNames = {"Name","Id","Version","Available","Source"};
-    for (auto &cn : colNames) {
-        size_t p = header.find(cn);
-        if (p != std::string::npos) colStarts.push_back((int)p);
-    }
-    if (colStarts.size() < 2) {
-        for (int i = sepIdx + 1, lastAdded = -1; i < (int)lines.size(); ++i) {
-            const std::string &ln = lines[i];
-            if (ln.find("upgrades available") != std::string::npos) break;
-            if (trim(ln).empty()) continue;
-            std::istringstream ls(ln);
-            std::vector<std::string> toks;
-            std::string tok;
-            while (ls >> tok) toks.push_back(tok);
-            if (toks.size() < 4) continue;
-            std::regex verRe2(R"(^[0-9]+(\.[0-9]+)*$)");
-            size_t n = toks.size();
-                if (n >= 3 && std::regex_match(toks[n-1], verRe2) && std::regex_match(toks[n-2], verRe2)) {
-                std::string available = toks[n-1];
-                std::string installed = toks[n-2];
-                std::string id = toks[n-3];
-                std::string name;
-                for (size_t j = 0; j + 3 < toks.size(); ++j) {
-                    if (j) name += " ";
-                    name += toks[j];
-                }
-                if (name.empty()) name = id;
-                if (CompareVersions(installed, available) < 0) {
-                    try {
-                        try { AppendLog(std::string("ParseWingetTextForPackages (fallback cols): candidate id='") + id + "' avail='" + available + "' name='" + name + "'\n"); } catch(...) {}
-                        bool skipped = false; try { skipped = IsSkipped(id, available); } catch(...) { skipped = false; }
-                        try { AppendLog(std::string("ParseWingetTextForPackages (fallback cols): IsSkipped returned ") + (skipped?"true":"false") + std::string(" for id='") + id + "'\n"); } catch(...) {}
-                        if (!skipped) g_packages.emplace_back(id, name);
-                    } catch(...) { g_packages.emplace_back(id, name); }
-                }
-            } else {
-                continue;
-            }
-        }
-        return;
-    }
-
-    int lastAdded = -1;
-    for (int i = sepIdx + 1; i < (int)lines.size(); ++i) {
-        const std::string &ln = lines[i];
-        if (ln.find("upgrades available") != std::string::npos) break;
-        if (trim(ln).empty()) continue;
-        if ((int)ln.size() <= colStarts[1]) {
-            if (lastAdded >= 0) {
-                std::string cont = trim(ln);
-                if (!cont.empty()) {
-                    g_packages[lastAdded].second += " ";
-                    g_packages[lastAdded].second += cont;
-                }
-            }
+        
+        // Skip empty lines
+        if (line.empty() || line.find_first_not_of(" \t\r\n") == std::string::npos) continue;
+        
+        // Split line into tokens
+        std::istringstream ls(line);
+        std::vector<std::string> tokens;
+        std::string tok;
+        while (ls >> tok) tokens.push_back(tok);
+        
+        AppendLog(std::string("ParseWingetTextForPackages: line ") + std::to_string(lineNum) + " has " + std::to_string((int)tokens.size()) + " tokens\n");
+        
+        // Need at least 5 tokens: Name Id Version Available Source
+        if (tokens.size() < 5) {
+            AppendLog(std::string("ParseWingetTextForPackages: SKIP line ") + std::to_string(lineNum) + " - not enough tokens\n");
             continue;
         }
-        auto substrSafe = [&](const std::string &s, int a, int b)->std::string{
-            int len = (int)s.size();
-            if (a >= len) return std::string();
-            int end = std::min(len, b);
-            return s.substr(a, end - a);
-        };
-
-        int ncols = (int)colStarts.size();
-        std::vector<std::string> fields(ncols);
-        for (int c = 0; c < ncols; ++c) {
-            int a = colStarts[c];
-            int b = (c+1 < ncols) ? colStarts[c+1] : (int)ln.size();
-            fields[c] = trim(substrSafe(ln, a, b));
-        }
-        std::string name = fields[0];
-        std::string id = (ncols > 1) ? fields[1] : std::string();
-        if (id.empty()) {
-            if (lastAdded >= 0) {
-                std::string cont = trim(ln);
-                if (!cont.empty()) {
-                    g_packages[lastAdded].second += " ";
-                    g_packages[lastAdded].second += cont;
-                }
-            }
-            continue;
+        
+        size_t n = tokens.size();
+        // Parse from right to left:
+        // tokens[n-1] = Source (e.g., "winget")
+        // tokens[n-2] = Available version
+        // tokens[n-3] = Current version
+        // tokens[n-4] = Package ID
+        // tokens[0 .. n-5] = Name (can contain spaces)
+        
+        std::string source = tokens[n-1];
+        std::string available = tokens[n-2];
+        std::string version = tokens[n-3];
+        std::string id = tokens[n-4];
+        
+        // Build name from remaining tokens
+        std::string name;
+        for (size_t i = 0; i + 4 < n; ++i) {
+            if (i > 0) name += " ";
+            name += tokens[i];
         }
         if (name.empty()) name = id;
+        
+        AppendLog(std::string("ParseWingetTextForPackages: parsed id='") + id + "' name='" + name + "' avail='" + available + "'\n");
+        
+        // Check if this package should be filtered out (skipped)
         try {
-            std::string availCol = (ncols > 3) ? fields[3] : std::string();
-            try { AppendLog(std::string("ParseWingetTextForPackages (cols): candidate id='") + id + "' avail='" + availCol + "' name='" + name + "'\n"); } catch(...) {}
-            try { bool skipped = false; try { skipped = IsSkipped(id, availCol); } catch(...) { skipped = false; } try { AppendLog(std::string("ParseWingetTextForPackages (cols): IsSkipped returned ") + (skipped?"true":"false") + std::string(" for id='") + id + "'\n"); } catch(...) {} if (!skipped) g_packages.emplace_back(id, name); } catch(...) { g_packages.emplace_back(id, name); }
-        } catch(...) { g_packages.emplace_back(id, name); }
-        lastAdded = (int)g_packages.size()-1;
-    }
-
-    std::set<std::string> seenIds;
-    for (auto &p : g_packages) seenIds.insert(p.first);
-    std::regex verRe(R"(^[0-9]+(\.[0-9]+)*$)");
-    for (const auto &ln : lines) {
-        std::istringstream ls(ln);
-        std::vector<std::string> toks;
-        std::string tok;
-        while (ls >> tok) toks.push_back(tok);
-        for (size_t j = 0; j + 2 < toks.size(); ++j) {
-            if (std::regex_match(toks[j+1], verRe) && std::regex_match(toks[j+2], verRe)) {
-                std::string id = toks[j];
-                if (seenIds.count(id)) break;
-                std::string installed = toks[j+1];
-                std::string available = toks[j+2];
-                    if (CompareVersions(installed, available) < 0) {
-                    std::string name;
-                    for (size_t k = 0; k < j; ++k) {
-                        if (k) name += " ";
-                        name += toks[k];
-                    }
-                    if (name.empty()) name = id;
-                    try {
-                        try { AppendLog(std::string("ParseWingetTextForPackages (final scan): candidate id='") + id + "' avail='" + available + "' name='" + name + "'\n"); } catch(...) {}
-                        bool skipped = false; try { skipped = IsSkipped(id, available); } catch(...) { skipped = false; }
-                        try { AppendLog(std::string("ParseWingetTextForPackages (final scan): IsSkipped returned ") + (skipped?"true":"false") + std::string(" for id='") + id + "'\n"); } catch(...) {}
-                        if (!skipped) { g_packages.emplace_back(id, name); seenIds.insert(id); }
-                    } catch(...) { g_packages.emplace_back(id, name); seenIds.insert(id); }
-                }
-                break;
+            bool skipped = IsSkipped(id, available);
+            if (!skipped) {
+                g_packages.emplace_back(id, name);
+                AppendLog(std::string("ParseWingetTextForPackages: ADDED id='") + id + "' name='" + name + "'\n");
+            } else {
+                AppendLog(std::string("ParseWingetTextForPackages: SKIPPED id='") + id + "' (user skipped)\n");
             }
+        } catch(...) {
+            // If IsSkipped fails, add it anyway
+            g_packages.emplace_back(id, name);
+            AppendLog(std::string("ParseWingetTextForPackages: ADDED id='") + id + "' (IsSkipped threw)\n");
         }
     }
+    
+    AppendLog(std::string("ParseWingetTextForPackages: finished, g_packages size=") + std::to_string((int)g_packages.size()) + "\n");
 }

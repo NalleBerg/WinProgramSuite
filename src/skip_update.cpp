@@ -10,6 +10,11 @@
 #include <algorithm>
 #include <thread>
 #include <chrono>
+#include <mutex>
+
+// Global map to store ID -> display name in memory
+static std::map<std::string, std::string> g_id_to_displayname;
+static std::mutex g_id_displayname_mutex;
 
 static std::string GetIniPath() {
     char buf[MAX_PATH];
@@ -73,71 +78,13 @@ std::map<std::string,std::string> LoadSkippedMap() {
         if (inSkipped) ss << line << "\n";
     }
     if (ss.str().size() > 0) out = ParseSkippedSection(ss.str());
-    // Normalize keys: strip trailing installed-version tokens from identifiers to keep left-side clean
-    auto isVersionToken = [](const std::string &t){ if (t.empty()) return false; for (char c : t) if (!(isdigit((unsigned char)c) || c=='.' || c=='-' || c=='_')) return false; return true; };
-    auto trim_inplace = [](std::string &x){ size_t a = x.find_first_not_of(" \t\r\n"); if (a==std::string::npos) { x.clear(); return; } size_t b = x.find_last_not_of(" \t\r\n"); x = x.substr(a, b-a+1); };
-    std::map<std::string,std::string> normalized;
-    bool changed = false;
-    for (auto &p : out) {
-        std::string key = p.first;
-        trim_inplace(key);
-        // strip trailing tokens that look like versions
-        while (true) {
-            size_t pos = key.find_last_of(" \t");
-            if (pos == std::string::npos) break;
-            std::string last = key.substr(pos+1);
-            if (isVersionToken(last)) { key = key.substr(0, pos); trim_inplace(key); changed = true; continue; }
-            break;
-        }
-        if (key.empty()) key = p.first;
-        normalized[key] = p.second;
-    }
-    // Apply canonical name->ID replacements (helpful when older INI used display-names)
-    auto versionGreater = [](const std::string &a, const std::string &b)->bool {
-        auto split = [](const std::string &s){ std::vector<std::string> out; std::string cur; for (char c : s) { if (c=='.' || c=='-' || c=='_') { if (!cur.empty()) { out.push_back(cur); cur.clear(); } } else cur.push_back(c); } if (!cur.empty()) out.push_back(cur); return out; };
-        auto A = split(a); auto B = split(b);
-        size_t n = std::max(A.size(), B.size());
-        for (size_t i = 0; i < n; ++i) {
-            long ai = 0, bi = 0;
-            if (i < A.size()) try { ai = std::stol(A[i]); } catch(...) { ai = 0; }
-            if (i < B.size()) try { bi = std::stol(B[i]); } catch(...) { bi = 0; }
-            if (ai > bi) return true;
-            if (ai < bi) return false;
-        }
-        return false;
-    };
-    std::vector<std::pair<std::string,std::string>> canon = {
-        {"vulkan sdk", "KhronosGroup.VulkanSDK"},
-        {"khronos vulkan", "KhronosGroup.VulkanSDK"}
-    };
-    for (auto &c : canon) {
-        for (auto it = normalized.begin(); it != normalized.end(); ) {
-            std::string key_l = it->first; for (auto &ch : key_l) ch = (char)tolower((unsigned char)ch);
-            if (key_l.find(c.first) != std::string::npos) {
-                std::string existingVer = it->second;
-                // promote to canonical id
-                if (normalized.count(c.second) == 0) normalized[c.second] = existingVer;
-                else {
-                    // keep the higher version
-                    if (versionGreater(existingVer, normalized[c.second])) normalized[c.second] = existingVer;
-                }
-                it = normalized.erase(it);
-                changed = true;
-                AppendLog(std::string("LoadSkippedMap: canonicalized '") + c.first + " -> " + c.second + "\n");
-            } else ++it;
-        }
-    }
-    if (changed) {
-        AppendLog(std::string("LoadSkippedMap: normalized/skipped keys rewritten, rewriting ini: ") + ini + "\n");
-        SaveSkippedMap(normalized);
-    }
-    // Log full normalized skipped map for diagnostics
+    // Log loaded skipped map for diagnostics
     try {
-        for (auto &kv : normalized) {
+        for (auto &kv : out) {
             AppendLog(std::string("LoadSkippedMap: entry '") + kv.first + "' -> '" + kv.second + "'\n");
         }
     } catch(...) {}
-    return normalized;
+    return out;
 }
 
 bool SaveSkippedMap(const std::map<std::string,std::string> &m) {
@@ -226,10 +173,25 @@ static bool VersionGreater(const std::string &a, const std::string &b) {
     return false;
 }
 
-bool AddSkippedEntry(const std::string &id, const std::string &version) {
+bool AddSkippedEntry(const std::string &id, const std::string &version, const std::string &displayName) {
+    // Store display name in memory if provided
+    if (!displayName.empty() && displayName != id) {
+        std::lock_guard<std::mutex> lock(g_id_displayname_mutex);
+        g_id_to_displayname[id] = displayName;
+        AppendLog(std::string("AddSkippedEntry: stored display name '") + displayName + "' for id '" + id + "'\n");
+    }
     auto m = LoadSkippedMap();
     m[id] = version;
     return SaveSkippedMap(m);
+}
+
+std::string GetDisplayNameForId(const std::string &id) {
+    std::lock_guard<std::mutex> lock(g_id_displayname_mutex);
+    auto it = g_id_to_displayname.find(id);
+    if (it != g_id_to_displayname.end()) {
+        return it->second;
+    }
+    return id; // fallback to id if not found
 }
 
 bool RemoveSkippedEntry(const std::string &id) {
@@ -337,14 +299,30 @@ void PurgeObsoleteSkips(const std::map<std::string,std::string> &currentAvail) {
             bool needsResolve = (identifier.find_first_of(" \t") != std::string::npos);
             if (needsResolve) {
                 AppendLog(std::string("AppendSkippedRaw: attempting id resolution for '") + identifier + "'\n");
+                
+                // If g_packages is empty, parse from in-memory winget output
+                {
+                    std::lock_guard<std::mutex> lk(g_packages_mutex);
+                    if (g_packages.empty()) {
+                        AppendLog("AppendSkippedRaw: g_packages empty, using in-memory winget output\n");
+                    }
+                }
+                
                 try {
-                    // Try most recent raw winget capture first
-                    std::string raw = ReadMostRecentRawWinget();
+                    // Get in-memory winget output
+                    std::string raw;
+                    {
+                        std::lock_guard<std::mutex> lk2(g_last_winget_raw_mutex);
+                        raw = g_last_winget_raw;
+                    }
+                    
                     if (!raw.empty()) {
                         ParseWingetTextForPackages(raw);
                         AppendLog(std::string("AppendSkippedRaw: ParseWingetTextForPackages populated g_packages size=") + std::to_string((int)g_packages.size()) + "\n");
+                    } else {
+                        AppendLog("AppendSkippedRaw: ERROR - g_last_winget_raw is empty!\n");
                     }
-                } catch(...) { AppendLog("AppendSkippedRaw: ReadMostRecentRawWinget/parse threw\n"); }
+                } catch(...) { AppendLog("AppendSkippedRaw: in-memory parse threw\n"); }
 
                 // search g_packages for matching display name (exact or case-insensitive/substring)
                 try {
@@ -423,55 +401,17 @@ void PurgeObsoleteSkips(const std::map<std::string,std::string> &currentAvail) {
                             }
                         }
                     }
-                    // If still not found, try fallback files in workspace by re-parsing them
-                    if (idFound.empty()) {
-                        const char *fallbacks[] = { "wup_winget_raw.txt", "wup_winget_raw_fallback.txt", "wup_winget_list_fallback.txt" };
-                        for (auto f : fallbacks) {
-                            std::ifstream ifs2(f, std::ios::binary);
-                            if (!ifs2) continue;
-                            std::string content((std::istreambuf_iterator<char>(ifs2)), std::istreambuf_iterator<char>());
-                            try { ParseWingetTextForPackages(content); } catch(...) { }
-                            std::lock_guard<std::mutex> lk2(g_packages_mutex);
-                            for (auto &p : g_packages) {
-                                if (p.second == identifier) { idFound = p.first; break; }
-                            }
-                            if (!idFound.empty()) break;
-                        }
-                    }
-                    // Final fallback: try extracting Id/Name pairs and fuzzy-match names
-                    if (idFound.empty()) {
-                        const char *fallbacks2[] = { "wup_winget_raw.txt", "wup_winget_raw_fallback.txt", "wup_winget_list_fallback.txt" };
-                        for (auto f : fallbacks2) {
-                            std::ifstream ifs3(f, std::ios::binary);
-                            if (!ifs3) continue;
-                            std::string content((std::istreambuf_iterator<char>(ifs3)), std::istreambuf_iterator<char>());
-                            auto vec = ExtractIdsFromNameIdText(content);
-                            std::string name_l = identifier; for (auto &c : name_l) c = (char)tolower((unsigned char)c);
-                            for (auto &pr : vec) {
-                                std::string nm = pr.second; std::string nm_l = nm; for (auto &c : nm_l) c = (char)tolower((unsigned char)c);
-                                if (nm_l == name_l || nm_l.find(name_l) != std::string::npos || name_l.find(nm_l) != std::string::npos) {
-                                    idFound = pr.first; break;
-                                }
-                            }
-                            if (!idFound.empty()) break;
-                        }
-                    }
                     if (!idFound.empty()) {
                         AppendLog(std::string("AppendSkippedRaw: resolved '") + identifier + "' -> id='" + idFound + "'\n");
                         writeId = idFound;
                     } else {
-                        AppendLog(std::string("AppendSkippedRaw: could not resolve id for '") + identifier + "' from current data, will trigger refresh and retry\n");
-                        // Trigger an async refresh in the main window to repopulate g_packages (winget scan)
-                        try {
-                            HWND hMain = FindWindowW(L"WinUpdateClass", NULL);
-                            if (hMain) {
-                                PostMessageW(hMain, WM_APP + 1, 1, 0);
-                                AppendLog("AppendSkippedRaw: posted WM_REFRESH_ASYNC to request package list refresh; not blocking UI\n");
-                                // Do not wait here — migration will run after refresh completes.
-                            } else {
-                                AppendLog("AppendSkippedRaw: main window not found, cannot request refresh\n");
-                            }
-                        } catch(...) { AppendLog("AppendSkippedRaw: refresh post threw\n"); }
+                        AppendLog(std::string("AppendSkippedRaw: FAILED to resolve id for '") + identifier + "' from in-memory data\n");
+                        // Log what we have in g_packages for debugging
+                        std::lock_guard<std::mutex> lk(g_packages_mutex);
+                        AppendLog(std::string("AppendSkippedRaw: g_packages size=") + std::to_string((int)g_packages.size()) + "\n");
+                        for (size_t i = 0; i < std::min((size_t)10, g_packages.size()); ++i) {
+                            AppendLog(std::string("  [") + std::to_string((int)i) + "] id='" + g_packages[i].first + "' name='" + g_packages[i].second + "'\n");
+                        }
                     }
                 } catch(...) { AppendLog("AppendSkippedRaw: id search threw\n"); }
             }
@@ -493,6 +433,33 @@ void PurgeObsoleteSkips(const std::map<std::string,std::string> &currentAvail) {
                 continue;
             }
             break;
+        }
+        // Validate: block writes if ID contains spaces (indicates resolution failed)
+        if (writeIdForFile.find(' ') != std::string::npos) {
+            AppendLog(std::string("AppendSkippedRaw: BLOCKED write - ID contains spaces: '") + writeIdForFile + "'\n");
+            // Build detailed error message showing what we found
+            std::string msg = "Failed to skip package.\n\n";
+            msg += "Searching for: " + identifier + "\n";
+            msg += "Found ID: " + writeIdForFile + "\n\n";
+            
+            // Show what's in g_packages
+            {
+                std::lock_guard<std::mutex> lk(g_packages_mutex);
+                msg += "Available packages in memory (" + std::to_string((int)g_packages.size()) + "):\n";
+                for (size_t i = 0; i < std::min((size_t)5, g_packages.size()); ++i) {
+                    msg += "  " + g_packages[i].first + " - " + g_packages[i].second + "\n";
+                }
+                if (g_packages.size() > 5) {
+                    msg += "  ... and " + std::to_string((int)g_packages.size() - 5) + " more\n";
+                }
+                if (g_packages.empty()) {
+                    msg += "  (empty - list not yet loaded)\n";
+                }
+            }
+            
+            msg += "\nPlease refresh the list and try again.";
+            MessageBoxA(NULL, msg.c_str(), "WinUpdate - Skip Failed", MB_OK | MB_ICONWARNING);
+            return false;
         }
         // prepare new line with a tab between (use resolved id when available)
         std::string newLine = writeIdForFile + "\t" + version;
@@ -528,71 +495,3 @@ void PurgeObsoleteSkips(const std::map<std::string,std::string> &currentAvail) {
             }
             return mv != 0;
     }
-
-        bool MigrateSkippedEntries() {
-            try {
-                auto m = LoadSkippedMap();
-                if (m.empty()) return false;
-                bool changed = false;
-                // helper functions (copy of logic used above)
-                auto toLower = [](const std::string &s){ std::string r = s; for (auto &c : r) c = (char)tolower((unsigned char)c); return r; };
-                auto isVersionToken = [](const std::string &t){ if (t.empty()) return false; for (char c : t) { if (!(isdigit((unsigned char)c) || c=='.' || c=='-' || c=='_')) return false; } return true; };
-                auto stripTrailingVersionTokens = [&](std::string s){ auto trim_inplace = [](std::string &x){ size_t a = x.find_first_not_of(" \t\r\n"); if (a==std::string::npos) { x.clear(); return; } size_t b = x.find_last_not_of(" \t\r\n"); x = x.substr(a, b-a+1); }; trim_inplace(s); while (true) { size_t p = s.find_last_of(" \t"); if (p==std::string::npos) break; std::string last = s.substr(p+1); if (isVersionToken(last)) { s = s.substr(0, p); trim_inplace(s); continue; } break; } return s; };
-                auto tokenize = [](const std::string &x){ std::vector<std::string> out; std::string cur; for (char c : x) { if (isalnum((unsigned char)c)) cur.push_back((char)tolower((unsigned char)c)); else { if (!cur.empty()) { out.push_back(cur); cur.clear(); } } } if (!cur.empty()) out.push_back(cur); return out; };
-
-                std::map<std::string,std::string> newMap = m;
-                for (auto it = m.begin(); it != m.end(); ++it) {
-                    const std::string &key = it->first;
-                    const std::string &ver = it->second;
-                    // if key contains whitespace or doesn't look like an id (no dot and contains spaces), try migrate
-                    bool looksLikeId = (key.find('.') != std::string::npos);
-                    if (looksLikeId) continue;
-                    std::string ident_stripped = stripTrailingVersionTokens(key);
-                    std::string name_l = toLower(ident_stripped);
-                    auto tokens = tokenize(name_l);
-                    std::string idFound;
-                    // canonical map check
-                    try {
-                        auto GetCanonicalIdForName_local = [](const std::string &name)->std::string {
-                            std::string nl = name; for (auto &c : nl) c = (char)tolower((unsigned char)c);
-                            const std::vector<std::pair<std::string,std::string>> canon = {
-                                {"vulkan sdk", "KhronosGroup.VulkanSDK"},
-                                {"khronos vulkan", "KhronosGroup.VulkanSDK"}
-                            };
-                            for (auto &p : canon) if (nl.find(p.first) != std::string::npos) return p.second;
-                            return std::string();
-                        };
-                        std::string c = GetCanonicalIdForName_local(ident_stripped);
-                        if (!c.empty()) idFound = c;
-                    } catch(...) {}
-                    {
-                        std::lock_guard<std::mutex> lk(g_packages_mutex);
-                        // exact
-                        for (auto &p : g_packages) if (p.second == ident_stripped) { idFound = p.first; break; }
-                        if (idFound.empty()) {
-                            for (auto &p : g_packages) { std::string nm_l = toLower(p.second); if (nm_l == name_l || nm_l.find(name_l) != std::string::npos || name_l.find(nm_l) != std::string::npos) { idFound = p.first; break; } }
-                        }
-                        if (idFound.empty() && !tokens.empty()) {
-                            for (auto &p : g_packages) { std::string nm_l = toLower(p.second); bool all = true; for (auto &t : tokens) if (nm_l.find(t) == std::string::npos) { all = false; break; } if (all) { idFound = p.first; break; } }
-                        }
-                        if (idFound.empty() && !tokens.empty()) {
-                            for (auto &p : g_packages) { std::string idl = toLower(p.first); bool all = true; for (auto &t : tokens) if (idl.find(t) == std::string::npos) { all = false; break; } if (all) { idFound = p.first; break; } }
-                        }
-                    }
-                    if (!idFound.empty()) {
-                        // migrate
-                        if (newMap.count(idFound) == 0) {
-                            newMap[idFound] = ver;
-                        } else {
-                            // prefer existing id-entry if present and keep higher version
-                            if (VersionGreater(ver, newMap[idFound])) newMap[idFound] = ver;
-                        }
-                        newMap.erase(key);
-                        changed = true;
-                        AppendLog(std::string("MigrateSkippedEntries: migrated '") + key + " -> " + idFound + "\n");
-                    }
-                }
-            if (changed) SaveSkippedMap(newMap);
-                return changed;
-            } catch(...) { return false; }
-        }
