@@ -1,36 +1,93 @@
-# WinUpdate — friendly winget GUI
+# WinUpdate — Friendly winget GUI
 
-<p align="center">
-	<img src="winupdate_logo.png" alt="WinUpdate logo" width="220" />
-</p>
+**WinUpdate** is a lightweight, native Windows GUI application that makes managing software updates easy through Microsoft's `winget` package manager. No more cryptic command lines — just a clean interface to keep your Windows applications up to date.
 
-WinUpdate is a small, lightweight Windows GUI wrapper around Microsoft's `winget` tool. It makes it easy to find and batch-update installed applications using a simple list-and-check interface.
+## ✨ Features
 
-Key features
-- Simple list view of updatable packages with checkboxes and a "select all" option
-- Single UAC elevation for installs (so you only confirm once)
-- Prefer `--output json` where available, with resilient text parsing fallbacks
-- Unicode-safe and logs raw `winget` output for debugging
-- Loading dialog with animated indicator and clean visuals
+- **📋 Visual Package List** — See all available updates in a clear, sortable list view
+- **✅ Batch Updates** — Select multiple packages and update them all at once
+- **⏭️ Skip Updates** — Skip specific package versions you don't want to install
+- **🔄 Unskip Management** — Review and re-enable previously skipped updates
+- **💾 Persistent Settings** — Your preferences are saved between sessions
+- **🌍 Multi-Language Support** — English (GB) and Norwegian (Bokmål) built-in
+- **🎨 Clean UI** — Modern Windows interface with hyperlinks and visual feedback
+- **🔐 Single UAC Prompt** — One elevation for all updates (not one per package)
 
-Quick start
-1. Build (Windows with MinGW/CMake):
+## 🚀 Quick Start
+
+### Prerequisites
+- Windows 10/11
+- winget (Microsoft App Installer) — [Install from Microsoft Store](https://apps.microsoft.com/detail/9NBLGGH4NNS1)
+- CMake and MinGW GCC (for building from source)
+
+### Building
 
 ```powershell
+# Clone the repository
+git clone https://github.com/NalleBerg/WinUpdate.git
+cd WinUpdate
+
+# Build the application
 .\makeit.bat
+
+# Run it
+.\WinUpdate\WinUpdate.exe
 ```
 
-2. Run the app:
+Or use CMake directly:
 
 ```powershell
-.\build\WinUpdate.exe
+mkdir build
+cd build
+cmake .. -G "MinGW Makefiles"
+cmake --build . --config Release
 ```
 
-Notes
-- The app does not perform installs when built in debug/test modes by default — check `src/main.cpp` for the debug flags used during development.
-- If you prefer a release-ready signed installer or packaged build, I can add an automated CI step.
+## 📖 How to Use
 
-Contributing
-- Send issues or patches; small, focused PRs are welcome.
+1. **Launch WinUpdate** — The app automatically scans for available updates
+2. **Review Updates** — See which packages have newer versions available
+3. **Select Updates** — Check the boxes for packages you want to update
+4. **Skip Versions** (Optional) — Click the "Skip" link to skip specific versions
+5. **Upgrade** — Click "Upgrade now" to install selected updates
+6. **Manage Skipped** — Use the "Unskip" button to review and remove skips
 
-Enjoy — and ping me when you want tweaks or a packaged release.
+## 🛠️ Current Status
+
+**✅ Working:**
+- Core update functionality
+- Skip/Unskip management
+- Multi-language support (English/Norwegian)
+- Config dialog for future systray integration
+
+**🚧 In Progress:**
+- System tray functionality
+- About dialog redesign
+- Enhanced update display
+
+This is a work in progress, but it's fully functional as a local application!
+
+## 📂 File Locations
+
+- **Settings:** `%APPDATA%\WinUpdate\wup_settings.ini`
+- **Logs:** `%APPDATA%\WinUpdate\logs\wup_run_log.txt`
+- **Localization:** `i18n\en_GB.txt`, `i18n\nb_NO.txt`
+
+## 🤝 Contributing
+
+Contributions are welcome! Feel free to:
+- Report bugs via [Issues](https://github.com/NalleBerg/WinUpdate/issues)
+- Submit pull requests (small, focused PRs preferred)
+- Suggest new features or improvements
+
+## 📜 License
+
+MIT License — See [LICENSE.md](LICENSE.md) for details
+
+## 🙏 Credits
+
+Developed by [NalleBerg](https://github.com/NalleBerg)
+
+---
+
+**Note:** WinUpdate is a GUI wrapper and relies on Microsoft's `winget` tool. Make sure you have the latest version of App Installer for the best experience.

@@ -9,9 +9,16 @@
 *.user
 *.suo
 
+# Ignore test files and tools
+/tests/
+/tools/
+shini.bat
+test*.*
+
 # Ignore WinUpdate runtime logs and winget fallback/raw captures
 # All files beginning with "wup" (e.g., wup_run_log.txt)
 wup*.*
+wupdbg*.*
 
 # Packaged installer staging dir
 /WinUpdate/
