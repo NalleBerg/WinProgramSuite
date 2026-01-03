@@ -17,6 +17,7 @@
 #include <unordered_set>
 #include <filesystem>
 #include "About.h"
+#include "Config.h"
 #include "logging.h"
 #include "hyperlink.h"
 #include "skip_update.h"
@@ -55,6 +56,7 @@ const wchar_t CLASS_NAME[] = L"WinUpdateClass";
 #define IDC_BTN_DONE 2003
 #define IDC_CHECK_SKIPSELECTED 2004
 #define IDC_BTN_ABOUT 2005
+#define IDC_BTN_CONFIG 2006
 #define IDC_BTN_UNSKIP 2007
 // IDC_BTN_PASTE removed: app will auto-scan winget at startup/refresh
 #define IDC_COMBO_LANG 3001
@@ -109,6 +111,7 @@ static HFONT g_hDotsFont = NULL;
 static HWND g_hMainWindow = NULL;
 static HWND g_hInstallAnim = NULL;
 static HWND g_hInstallPanel = NULL;
+static HWND g_hTooltipAbout = NULL;
 static int g_install_anim_state = 0;
 static std::atomic<bool> g_install_block_destroy{false};
 static int g_loading_anim_state = 0;
@@ -1899,16 +1902,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
         // position Refresh where the Upgrade button used to be (bottom-right)
         hBtnRefresh = CreateWindowExW(0, L"Button", t("refresh").c_str(), WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 470, 350, 140, 28, hwnd, (HMENU)IDC_BTN_REFRESH, NULL, NULL);
 
-        // About button at top-right (owner-draw so we can color on hover/press)
-        HWND hBtnAbout = CreateWindowExW(0, L"Button", t("about_btn").c_str(), WS_CHILD | WS_VISIBLE | BS_OWNERDRAW | WS_TABSTOP, 470, 10, 120, 28, hwnd, (HMENU)IDC_BTN_ABOUT, NULL, NULL);
-        if (hBtnAbout) {
-            // subclass to track mouse hover/leave and store state in GWLP_USERDATA
-            SetWindowSubclass(hBtnAbout, [](HWND h, UINT msg, WPARAM wp, LPARAM lp, UINT_PTR, DWORD_PTR)->LRESULT {
+        // Config button (owner-draw, positioned with 2px gap before About at 590)
+        HWND hBtnConfig = CreateWindowExW(0, L"Button", t("config_btn").c_str(), WS_CHILD | WS_VISIBLE | BS_OWNERDRAW | WS_TABSTOP, 468, 10, 120, 28, hwnd, (HMENU)IDC_BTN_CONFIG, NULL, NULL);
+        if (hBtnConfig) {
+            SetWindowSubclass(hBtnConfig, [](HWND h, UINT msg, WPARAM wp, LPARAM lp, UINT_PTR, DWORD_PTR)->LRESULT {
                 switch (msg) {
                 case WM_MOUSEMOVE: {
-                    // set hover flag
                     SetWindowLongPtrW(h, GWLP_USERDATA, 1);
-                    // request redraw of parent so WM_DRAWITEM runs
                     InvalidateRect(h, NULL, TRUE);
                     TRACKMOUSEEVENT tme{}; tme.cbSize = sizeof(tme); tme.dwFlags = TME_LEAVE; tme.hwndTrack = h; TrackMouseEvent(&tme);
                     break;
@@ -1916,6 +1916,84 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                 case WM_MOUSELEAVE: {
                     SetWindowLongPtrW(h, GWLP_USERDATA, 0);
                     InvalidateRect(h, NULL, TRUE);
+                    break;
+                }
+                }
+                return DefSubclassProc(h, msg, wp, lp);
+            }, 0, 0);
+        }
+
+        // About button at top-right (owner-draw so we can color on hover/press)
+        HWND hBtnAbout = CreateWindowExW(0, L"Button", t("about_btn").c_str(), WS_CHILD | WS_VISIBLE | BS_OWNERDRAW | WS_TABSTOP, 590, 10, 120, 28, hwnd, (HMENU)IDC_BTN_ABOUT, NULL, NULL);
+        if (hBtnAbout) {
+            // Create custom tooltip window (same style as Skip column tooltip)
+            static const wchar_t *kTipClass = L"WinUpdateSimpleTooltip";
+            static bool registered = false;
+            if (!registered) {
+                WNDCLASSEXW wc = { sizeof(wc) };
+                wc.lpfnWndProc = [](HWND hw, UINT um, WPARAM w, LPARAM l)->LRESULT {
+                    if (um == WM_PAINT) {
+                        PAINTSTRUCT ps; HDC hdc = BeginPaint(hw, &ps);
+                        RECT rc; GetClientRect(hw, &rc);
+                        FillRect(hdc, &rc, (HBRUSH)(COLOR_INFOBK + 1));
+                        FrameRect(hdc, &rc, (HBRUSH)GetStockObject(BLACK_BRUSH));
+                        int len = GetWindowTextLengthW(hw);
+                        std::vector<wchar_t> buf(len + 1);
+                        if (len > 0) GetWindowTextW(hw, buf.data(), len + 1);
+                        SetTextColor(hdc, GetSysColor(COLOR_INFOTEXT));
+                        SetBkMode(hdc, TRANSPARENT);
+                        HFONT hf = (HFONT)SendMessageW(hw, WM_GETFONT, 0, 0);
+                        HGDIOBJ old = NULL; if (hf) old = SelectObject(hdc, hf);
+                        RECT inner = rc; inner.left += 4; inner.right -= 4; inner.top += 2; inner.bottom -= 2;
+                        DrawTextW(hdc, buf.data(), -1, &inner, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+                        if (old) SelectObject(hdc, old);
+                        EndPaint(hw, &ps);
+                        return 0;
+                    }
+                    return DefWindowProcW(hw, um, w, l);
+                };
+                wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+                wc.hInstance = GetModuleHandleW(NULL);
+                wc.hbrBackground = (HBRUSH)(COLOR_INFOBK + 1);
+                wc.lpszClassName = kTipClass;
+                RegisterClassExW(&wc);
+                registered = true;
+            }
+            g_hTooltipAbout = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, kTipClass, L"Coming soon... / Kommer snart...", WS_POPUP, 
+                CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, hwnd, NULL, GetModuleHandleW(NULL), NULL);
+            HFONT hFont = (HFONT)SendMessageW(hwnd, WM_GETFONT, 0, 0);
+            if (hFont && g_hTooltipAbout) SendMessageW(g_hTooltipAbout, WM_SETFONT, (WPARAM)hFont, TRUE);
+            
+            // subclass to track mouse hover/leave and show/hide tooltip
+            SetWindowSubclass(hBtnAbout, [](HWND h, UINT msg, WPARAM wp, LPARAM lp, UINT_PTR, DWORD_PTR)->LRESULT {
+                switch (msg) {
+                case WM_MOUSEMOVE: {
+                    SetWindowLongPtrW(h, GWLP_USERDATA, 1);
+                    InvalidateRect(h, NULL, TRUE);
+                    TRACKMOUSEEVENT tme{}; tme.cbSize = sizeof(tme); tme.dwFlags = TME_LEAVE; tme.hwndTrack = h; TrackMouseEvent(&tme);
+                    // Show tooltip
+                    if (g_hTooltipAbout && IsWindow(g_hTooltipAbout)) {
+                        RECT rc; GetWindowRect(h, &rc);
+                        HDC hdc = GetDC(g_hTooltipAbout);
+                        HFONT hf = (HFONT)SendMessageW(g_hTooltipAbout, WM_GETFONT, 0, 0);
+                        HGDIOBJ old = NULL; if (hf) old = SelectObject(hdc, hf);
+                        RECT calc = {0,0,0,0};
+                        wchar_t tipText[] = L"Coming soon... / Kommer snart...";
+                        DrawTextW(hdc, tipText, -1, &calc, DT_LEFT | DT_SINGLELINE | DT_CALCRECT);
+                        int w = calc.right - calc.left + 8, h2 = calc.bottom - calc.top + 4;
+                        if (old) SelectObject(hdc, old);
+                        ReleaseDC(g_hTooltipAbout, hdc);
+                        int tipX = (rc.left + rc.right) / 2 - w/2;
+                        int tipY = rc.top - h2 - 4;
+                        SetWindowPos(g_hTooltipAbout, HWND_TOP, tipX, tipY, w, h2, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+                    }
+                    break;
+                }
+                case WM_MOUSELEAVE: {
+                    SetWindowLongPtrW(h, GWLP_USERDATA, 0);
+                    InvalidateRect(h, NULL, TRUE);
+                    // Hide tooltip
+                    if (g_hTooltipAbout && IsWindow(g_hTooltipAbout)) ShowWindow(g_hTooltipAbout, SW_HIDE);
                     break;
                 }
                 }
@@ -2291,7 +2369,27 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     case WM_DRAWITEM: {
         LPDRAWITEMSTRUCT dis = (LPDRAWITEMSTRUCT)lParam;
         if (!dis) break;
-        if (dis->CtlID == IDC_BTN_ABOUT) {
+        if (dis->CtlID == IDC_BTN_CONFIG) {
+            HWND hBtn = dis->hwndItem;
+            BOOL hover = (BOOL)GetWindowLongPtrW(hBtn, GWLP_USERDATA);
+            bool pressed = (dis->itemState & ODS_SELECTED) != 0;
+            HDC hdc = dis->hDC;
+            RECT rc = dis->rcItem;
+            COLORREF base = RGB(10,57,129);
+            COLORREF hoverCol = RGB(25,95,210);
+            COLORREF pressCol = RGB(6,34,80);
+            HBRUSH hBrush = CreateSolidBrush(pressed ? pressCol : (hover ? hoverCol : base));
+            FillRect(hdc, &rc, hBrush);
+            DeleteObject(hBrush);
+            SetTextColor(hdc, RGB(255,255,255));
+            SetBkMode(hdc, TRANSPARENT);
+            HFONT hf = g_hLastUpdatedFont ? g_hLastUpdatedFont : (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+            HGDIOBJ oldf = SelectObject(hdc, hf);
+            DrawTextW(hdc, t("config_btn").c_str(), -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            SelectObject(hdc, oldf);
+            if (dis->itemState & ODS_FOCUS) DrawFocusRect(hdc, &rc);
+            return 0;
+        } else if (dis->CtlID == IDC_BTN_ABOUT) {
             HWND hBtn = dis->hwndItem;
             BOOL hover = (BOOL)GetWindowLongPtrW(hBtn, GWLP_USERDATA);
             bool pressed = (dis->itemState & ODS_SELECTED) != 0;
@@ -2486,6 +2584,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                 // Update button texts
                 HWND hBtnUnskip = GetDlgItem(hwnd, IDC_BTN_UNSKIP);
                 if (hBtnUnskip) SetWindowTextW(hBtnUnskip, t("unskip_btn").c_str());
+                HWND hBtnConfig = GetDlgItem(hwnd, IDC_BTN_CONFIG);
+                if (hBtnConfig) SetWindowTextW(hBtnConfig, t("config_btn").c_str());
                 HWND hBtnAbout = GetDlgItem(hwnd, IDC_BTN_ABOUT);
                 if (hBtnAbout) SetWindowTextW(hBtnAbout, t("about_btn").c_str());
                 // Inform the user about the language change with an info icon
@@ -2499,7 +2599,11 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
             if (!g_refresh_in_progress.load()) PostMessageW(hwnd, WM_REFRESH_ASYNC, 1, 0);
             break;
         } else if (id == IDC_BTN_ABOUT) {
-            ShowAboutDialog(hwnd);
+            // Disabled - About dialog under development
+            // ShowAboutDialog(hwnd);
+            break;
+        } else if (id == IDC_BTN_CONFIG) {
+            ShowConfigDialog(hwnd);
             break;
         } else if (id == IDC_BTN_UNSKIP) {
             // Open Unskip dialog to allow removing skipped entries
