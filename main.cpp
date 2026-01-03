@@ -118,7 +118,7 @@ static bool g_popupClassRegistered = false;
 // Simple i18n: UTF-8 key=value loader. Keys are ASCII.
 static std::unordered_map<std::string,std::string> g_i18n_default;
 static std::unordered_map<std::string,std::string> g_i18n;
-static std::string g_locale = "en";
+static std::string g_locale = "en_GB";
 
 // forward declare helper functions used by i18n loader (defined later)
 static std::string ReadFileUtf8(const std::wstring &path);
@@ -1849,11 +1849,11 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
         // language selection combobox (top-left)
         HWND hComboLang = CreateWindowExW(0, WC_COMBOBOXW, NULL, WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_TABSTOP, 10, 10, 150, 200, hwnd, (HMENU)IDC_COMBO_LANG, NULL, NULL);
         if (hComboLang) {
-            SendMessageW(hComboLang, CB_ADDSTRING, 0, (LPARAM)L"English (en)");
-            SendMessageW(hComboLang, CB_ADDSTRING, 0, (LPARAM)L"Norsk (no)");
+            SendMessageW(hComboLang, CB_ADDSTRING, 0, (LPARAM)L"English (en_GB)");
+            SendMessageW(hComboLang, CB_ADDSTRING, 0, (LPARAM)L"Norsk (nb_NO)");
             // select based on g_locale (prefix)
             int sel = 0;
-            if (g_locale.rfind("no",0) == 0) sel = 1;
+            if (g_locale.rfind("nb_NO",0) == 0) sel = 1;
             SendMessageW(hComboLang, CB_SETCURSEL, sel, 0);
         }
 
@@ -1891,7 +1891,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
         // place Upgrade button 5px to the right of Select all
         hBtnUpgrade = CreateWindowExW(0, L"Button", t("upgrade_now").c_str(), WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 135, 350, 220, 28, hwnd, (HMENU)IDC_BTN_UPGRADE, NULL, NULL);
         // Unskip selected (hidden by default). Place between Upgrade and Refresh.
-        HWND hBtnUnskip = CreateWindowExW(0, L"Button", L"Unskip", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 365, 350, 100, 28, hwnd, (HMENU)IDC_BTN_UNSKIP, NULL, NULL);
+        HWND hBtnUnskip = CreateWindowExW(0, L"Button", t("unskip_btn").c_str(), WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 365, 350, 100, 28, hwnd, (HMENU)IDC_BTN_UNSKIP, NULL, NULL);
         if (hBtnUnskip) {
             UpdateUnskipButton(hwnd);
         }
@@ -1900,7 +1900,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
         hBtnRefresh = CreateWindowExW(0, L"Button", t("refresh").c_str(), WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 470, 350, 140, 28, hwnd, (HMENU)IDC_BTN_REFRESH, NULL, NULL);
 
         // About button at top-right (owner-draw so we can color on hover/press)
-        HWND hBtnAbout = CreateWindowExW(0, L"Button", L"About", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW | WS_TABSTOP, 470, 10, 120, 28, hwnd, (HMENU)IDC_BTN_ABOUT, NULL, NULL);
+        HWND hBtnAbout = CreateWindowExW(0, L"Button", t("about_btn").c_str(), WS_CHILD | WS_VISIBLE | BS_OWNERDRAW | WS_TABSTOP, 470, 10, 120, 28, hwnd, (HMENU)IDC_BTN_ABOUT, NULL, NULL);
         if (hBtnAbout) {
             // subclass to track mouse hover/leave and store state in GWLP_USERDATA
             SetWindowSubclass(hBtnAbout, [](HWND h, UINT msg, WPARAM wp, LPARAM lp, UINT_PTR, DWORD_PTR)->LRESULT {
@@ -1922,6 +1922,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                 return DefSubclassProc(h, msg, wp, lp);
             }, 0, 0);
         }
+
         // record main window handle, initial timestamp and auto-refresh once UI is created (start async refresh)
         g_hMainWindow = hwnd;
         // clean up any stale install temp files from previous runs
@@ -2308,7 +2309,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
             SetBkMode(hdc, TRANSPARENT);
             HFONT hf = g_hLastUpdatedFont ? g_hLastUpdatedFont : (HFONT)GetStockObject(DEFAULT_GUI_FONT);
             HGDIOBJ oldf = SelectObject(hdc, hf);
-            DrawTextW(hdc, L"About", -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            DrawTextW(hdc, t("about_btn").c_str(), -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
             SelectObject(hdc, oldf);
             if (dis->itemState & ODS_FOCUS) DrawFocusRect(hdc, &rc);
             return 0;
@@ -2461,7 +2462,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
             HWND hCombo = GetDlgItem(hwnd, IDC_COMBO_LANG);
                 if (hCombo) {
                 int sel = (int)SendMessageW(hCombo, CB_GETCURSEL, 0, 0);
-                std::string newloc = (sel == 1) ? "no" : "en";
+                std::string newloc = (sel == 1) ? "nb_NO" : "en_GB";
                 g_locale = newloc;
                 LoadLocaleFromFile(g_locale);
                 SaveLocaleSetting(g_locale);
@@ -2470,15 +2471,23 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                 SetWindowTextW(GetDlgItem(hwnd, IDC_CHECK_SELECTALL), t("select_all").c_str());
                 SetWindowTextW(GetDlgItem(hwnd, IDC_BTN_UPGRADE), t("upgrade_now").c_str());
                 SetWindowTextW(GetDlgItem(hwnd, IDC_BTN_REFRESH), t("refresh").c_str());
+                SetWindowTextW(GetDlgItem(hwnd, IDC_BTN_UNSKIP), t("unskip_btn").c_str());
                 // update listview column headers
                 HWND hListLocal = GetDlgItem(hwnd, IDC_LISTVIEW);
                 if (hListLocal) {
                     UpdateListViewHeaders(hListLocal);
                     AdjustListColumns(hListLocal);
+                    // Re-populate ListView to update Skip column text with new translation
+                    PopulateListView(hListLocal);
                 }
                 // update window title but do not translate app name
                 std::wstring winTitle = std::wstring(L"WinUpdate - ") + t("app_window_suffix");
                 SetWindowTextW(hwnd, winTitle.c_str());
+                // Update button texts
+                HWND hBtnUnskip = GetDlgItem(hwnd, IDC_BTN_UNSKIP);
+                if (hBtnUnskip) SetWindowTextW(hBtnUnskip, t("unskip_btn").c_str());
+                HWND hBtnAbout = GetDlgItem(hwnd, IDC_BTN_ABOUT);
+                if (hBtnAbout) SetWindowTextW(hBtnAbout, t("about_btn").c_str());
                 // Inform the user about the language change with an info icon
                 MessageBoxW(hwnd, t("lang_changed").c_str(), t("app_title").c_str(), MB_OK | MB_ICONINFORMATION);
             }

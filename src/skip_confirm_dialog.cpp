@@ -125,7 +125,7 @@ static std::wstring Utf8ToWide(const std::string &s) {
 
 bool ShowSkipConfirm(HWND parent, const std::wstring &appname, const std::wstring &availableVersion) {
     AppendLog("[skip_confirm] ShowSkipConfirm entered\n");
-    std::string locale = LoadLocaleSetting(); if (locale.empty()) locale = "en";
+    std::string locale = LoadLocaleSetting(); if (locale.empty()) locale = "en_GB";
 
     // load templates from i18n; fall back to existing common keys if present
     // i18n files already contain `skip_confirm_question` and `skip_confirm_body` plus `btn_do_it`/`btn_cancel`.

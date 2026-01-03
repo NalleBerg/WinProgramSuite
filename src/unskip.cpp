@@ -315,7 +315,7 @@ static LRESULT CALLBACK Unskip_ListSubclassProc(HWND hwnd, UINT uMsg, WPARAM wPa
 }
 
 bool ShowUnskipDialog(HWND parent) {
-    std::string locale = "en";
+    std::string locale = "en_GB";
     // try to read locale from settings file similar to other code
     char buf[MAX_PATH]; DWORD len = GetEnvironmentVariableA("APPDATA", buf, MAX_PATH);
     std::string settingsIni;

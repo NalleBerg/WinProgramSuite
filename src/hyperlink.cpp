@@ -86,10 +86,10 @@ static std::string LoadLocaleSetting() {
         std::ofstream ofs(ini, std::ios::binary);
         if (ofs) {
             ofs << "[language]\n";
-            ofs << "en\n\n";
+            ofs << "en_GB\n\n";
             ofs << "[skipped]\n";
         }
-        return std::string("en");
+        return std::string("en_GB");
     }
     auto trim = [](std::string &s){ size_t a = s.find_first_not_of(" \t\r\n"); if (a==std::string::npos) { s.clear(); return; } size_t b = s.find_last_not_of(" \t\r\n"); s = s.substr(a, b-a+1); };
     std::string line;
@@ -220,13 +220,18 @@ static std::wstring FormatTooltipTemplate(const std::wstring &tmpl, const std::w
 static LRESULT CALLBACK Hyperlink_ListSubclassProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam,
     UINT_PTR uIdSubclass, DWORD_PTR dwRefData);
 
-RECT DrawHyperlink(HDC hdc, const RECT &rc, const std::wstring & /*text*/, HFONT hFont, bool hovered) {
+RECT DrawHyperlink(HDC hdc, const RECT &rc, const std::wstring &text, HFONT hFont, bool hovered) {
     RECT out = rc;
     if (!hdc) return out;
-    const std::wstring drawText = L"Skip";
+    const std::wstring drawText = text.empty() ? L"Skip" : text;
     int saved = SaveDC(hdc);
     HGDIOBJ old = NULL;
     if (hFont) old = SelectObject(hdc, hFont);
+    
+    // Fill background to cover any text the ListView drew
+    HBRUSH bgBrush = (HBRUSH)GetStockObject(WHITE_BRUSH);
+    FillRect(hdc, &rc, bgBrush);
+    
     SetBkMode(hdc, TRANSPARENT);
     COLORREF clr = hovered ? RGB(0, 0, 180) : RGB(0, 0, 238);
     SetTextColor(hdc, clr);
@@ -319,7 +324,7 @@ static LRESULT CALLBACK Hyperlink_ListSubclassProc(HWND hwnd, UINT uMsg, WPARAM 
             HWND tt = EnsureTooltipForList(hwnd);
             if (tt) {
                 // build tooltip text using i18n
-                std::string locale = LoadLocaleSetting(); if (locale.empty()) locale = "en";
+                std::string locale = LoadLocaleSetting(); if (locale.empty()) locale = "en_GB";
                 std::string tmpl = LoadI18nValue(locale, "skip_tooltip");
                 if (tmpl.empty()) tmpl = LoadI18nValue(locale, "skip_confirm_question");
                 std::wstring wtmpl = Utf8ToWide(tmpl);
