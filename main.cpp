@@ -2133,8 +2133,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
         {
             std::lock_guard<std::mutex> lk(g_packages_mutex);
             if (g_packages.empty()) {
-                // Only show the 'up-to-date' popup if this was a manual refresh (user requested).
-                if (wParam) {
+                // Only show the 'up-to-date' popup if this was a manual refresh (user requested)
+                // and not running in system tray mode (where balloon notification is shown instead).
+                if (wParam && (!g_systemTray || !g_systemTray->IsActive())) {
                     std::wstring msg = t("your_system_updated");
                     MessageBoxW(hwnd, msg.c_str(), L"WinUpdate", MB_OK | MB_ICONINFORMATION);
                 }
@@ -2172,6 +2173,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                     std::wstringstream msg;
                     msg << nonSkippedCount << L" update" << (nonSkippedCount > 1 ? L"s" : L"") << L" found. Click to view.";
                     g_systemTray->ShowBalloon(title, msg.str());
+                } else {
+                    // No updates available
+                    g_systemTray->ShowBalloon(L"WinUpdate", L"You are updated!");
                 }
             }
         } catch(...) {}

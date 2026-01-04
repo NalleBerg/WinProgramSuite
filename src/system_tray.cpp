@@ -211,10 +211,35 @@ void SystemTray::UpdateNextScanTime() {
 }
 
 std::wstring SystemTray::GetNextScanTimeString() {
+    // Get current time
+    SYSTEMTIME currentTime;
+    GetLocalTime(&currentTime);
+    
+    // Convert both times to FILETIME for comparison
+    FILETIME ftCurrent, ftNext;
+    SystemTimeToFileTime(&currentTime, &ftCurrent);
+    SystemTimeToFileTime(&m_nextScanTime, &ftNext);
+    
+    // Convert to ULARGE_INTEGER for subtraction
+    ULARGE_INTEGER uliCurrent, uliNext;
+    uliCurrent.LowPart = ftCurrent.dwLowDateTime;
+    uliCurrent.HighPart = ftCurrent.dwHighDateTime;
+    uliNext.LowPart = ftNext.dwLowDateTime;
+    uliNext.HighPart = ftNext.dwHighDateTime;
+    
+    // Calculate difference in 100-nanosecond intervals
+    LONGLONG diff = uliNext.QuadPart - uliCurrent.QuadPart;
+    
+    // Convert to minutes and hours
+    LONGLONG totalMinutes = diff / 600000000LL; // 100-nanoseconds to minutes
+    int hours = (int)(totalMinutes / 60);
+    int minutes = (int)(totalMinutes % 60);
+    
+    // Format as HH:MM
     std::wstringstream ss;
-    ss << std::setfill(L'0') << std::setw(2) << m_nextScanTime.wHour 
+    ss << std::setfill(L'0') << std::setw(2) << hours 
        << L":" 
-       << std::setfill(L'0') << std::setw(2) << m_nextScanTime.wMinute;
+       << std::setfill(L'0') << std::setw(2) << minutes;
     return ss.str();
 }
 
