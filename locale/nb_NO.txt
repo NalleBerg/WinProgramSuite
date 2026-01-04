@@ -10,4 +10,6 @@ id_col=Id
 loading_title=Laster, vennligst
 loading_desc=Spørrer winget
 your_system_updated=Systemet ditt er oppdatert!
+no_packages_selected=Vennligst velg minst én pakke å installere.
+install_done=Ferdig!
 msg_error_elevate=Kunne ikke starte prosess med forhøyede rettigheter.

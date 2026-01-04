@@ -43,6 +43,12 @@ endif()
 if(EXISTS ${CMAKE_SOURCE_DIR}/src/system_tray.cpp)
   list(APPEND SOURCES ${CMAKE_SOURCE_DIR}/src/system_tray.cpp)
 endif()
+if(EXISTS ${CMAKE_SOURCE_DIR}/src/ctrlw.cpp)
+  list(APPEND SOURCES ${CMAKE_SOURCE_DIR}/src/ctrlw.cpp)
+endif()
+if(EXISTS ${CMAKE_SOURCE_DIR}/src/install_dialog.cpp)
+  list(APPEND SOURCES ${CMAKE_SOURCE_DIR}/src/install_dialog.cpp)
+endif()
 if(EXISTS ${CMAKE_SOURCE_DIR}/build/tooltips.cpp)
   list(APPEND SOURCES ${CMAKE_SOURCE_DIR}/build/tooltips.cpp)
 endif()
@@ -76,6 +82,16 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/closetray.cpp)
   set_target_properties(closetray PROPERTIES
     WIN32_EXECUTABLE FALSE  # Console application
   )
+endif()
+
+# Build test_install_overlay.exe - test app for install UI
+if(EXISTS ${CMAKE_SOURCE_DIR}/test_install_overlay.cpp)
+  add_executable(test_install_overlay test_install_overlay.cpp)
+  set_target_properties(test_install_overlay PROPERTIES
+    WIN32_EXECUTABLE TRUE
+    LINK_FLAGS "-municode"
+  )
+  target_link_libraries(test_install_overlay PRIVATE comctl32)
 endif()
 
 # Fetch nlohmann/json for robust JSON parsing

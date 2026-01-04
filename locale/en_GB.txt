@@ -10,4 +10,6 @@ id_col=Id
 loading_title=Loading, please
 loading_desc=Querying winget
 your_system_updated=Your system is updated!
+no_packages_selected=Please select at least one package to install.
+install_done=Done!
 msg_error_elevate=Failed to launch elevated process.

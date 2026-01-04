@@ -1,4 +1,5 @@
 #include "About.h"
+#include "ctrlw.h"
 #include <string>
 #include <fstream>
 #include <vector>
@@ -150,6 +151,12 @@ void ShowLicenseDialog(HWND parent)
     ShowWindow(dlg, SW_SHOW);
     MSG msg; BOOL running = TRUE;
     while (running && GetMessageW(&msg, NULL, 0, 0)) {
+        // Handle Ctrl+W
+        if (HandleCtrlW(dlg, msg.message, msg.wParam, msg.lParam)) {
+            running = FALSE;
+            DestroyWindow(dlg);
+            break;
+        }
         if (msg.hwnd == dlg) {
             if (msg.message == WM_COMMAND) {
                 int id = LOWORD(msg.wParam);
@@ -158,7 +165,11 @@ void ShowLicenseDialog(HWND parent)
         }
         TranslateMessage(&msg); DispatchMessage(&msg);
     }
-    if (parent && IsWindow(parent)) EnableWindow(parent, TRUE);
+    if (parent && IsWindow(parent)) {
+        EnableWindow(parent, TRUE);
+        SetForegroundWindow(parent);
+        BringWindowToTop(parent);
+    }
     if (hbmp) DeleteObject(hbmp);
 }
 
@@ -197,14 +208,29 @@ void ShowAboutDialog(HWND parent)
     ShowWindow(dlg, SW_SHOW);
     MSG msg; BOOL running = TRUE;
     while (running && GetMessageW(&msg, NULL, 0, 0)) {
-        if (msg.hwnd == dlg) {
+        // Handle Ctrl+W
+        if (HandleCtrlW(dlg, msg.message, msg.wParam, msg.lParam)) {
+            running = FALSE;
+            DestroyWindow(dlg);
+            break;
+        }
+        if (msg.hwnd == dlg || IsChild(dlg, msg.hwnd)) {
             if (msg.message == WM_COMMAND) {
                 int id = LOWORD(msg.wParam);
                 if (id == IDOK) { running = FALSE; DestroyWindow(dlg); break; }
                 if (id == 1001) { ShowLicenseDialog(dlg); }
             }
         }
+        if (msg.message == WM_CLOSE && msg.hwnd == dlg) {
+            running = FALSE;
+            DestroyWindow(dlg);
+            break;
+        }
         TranslateMessage(&msg); DispatchMessage(&msg);
     }
-    if (parent && IsWindow(parent)) EnableWindow(parent, TRUE);
+    if (parent && IsWindow(parent)) {
+        EnableWindow(parent, TRUE);
+        SetForegroundWindow(parent);
+        BringWindowToTop(parent);
+    }
 }

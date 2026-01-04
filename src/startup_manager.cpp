@@ -103,3 +103,32 @@ bool DeleteStartupShortcut() {
     // Delete the shortcut
     return DeleteFileW(shortcutPath.c_str()) != 0;
 }
+bool VerifyStartupShortcut(int mode) {
+    // mode: 0=Manual (no shortcut), 1=Startup (--hidden), 2=SysTray (--systray)
+    
+    bool shortcutExists = StartupShortcutExists();
+    
+    if (mode == 0) {
+        // Manual mode: shortcut should not exist
+        if (shortcutExists) {
+            return DeleteStartupShortcut();
+        }
+        return true; // Already correct
+    } else if (mode == 1) {
+        // Startup mode: shortcut should exist with --hidden
+        // Always recreate to ensure it's correct
+        if (shortcutExists) {
+            DeleteStartupShortcut();
+        }
+        return CreateStartupShortcut();
+    } else if (mode == 2) {
+        // SysTray mode: shortcut should exist with --systray
+        // Always recreate to ensure it's correct
+        if (shortcutExists) {
+            DeleteStartupShortcut();
+        }
+        return CreateStartupShortcut(L"--systray", L"WinUpdate - Windows Update Manager (System Tray)");
+    }
+    
+    return false; // Invalid mode
+}

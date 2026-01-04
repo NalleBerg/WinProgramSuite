@@ -22,4 +22,9 @@ bool StartupShortcutExists();
 // Get the full path to the startup shortcut
 std::wstring GetStartupShortcutPath();
 
+// Verify startup shortcut matches mode and fix if needed
+// mode: 0=Manual (delete), 1=Startup (--hidden), 2=SysTray (--systray)
+// Returns true if shortcut is correct or was fixed, false on error
+bool VerifyStartupShortcut(int mode);
+
 #endif // STARTUP_MANAGER_H

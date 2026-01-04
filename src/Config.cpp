@@ -1,5 +1,6 @@
 #include "Config.h"
 #include "startup_manager.h"
+#include "ctrlw.h"
 #include <windows.h>
 #include <commctrl.h>
 #include <string>
@@ -258,7 +259,7 @@ bool ShowConfigDialog(HWND parent, const std::string &currentLocale) {
     int parentCenterY = (rcParent.top + rcParent.bottom) / 2;
     
     // Create dialog
-    const int dlgW = 460, dlgH = 270;
+    const int dlgW = 600, dlgH = 270;
     int dlgX = parentCenterX - dlgW / 2;
     int dlgY = parentCenterY - dlgH / 2;
     
@@ -315,7 +316,7 @@ bool ShowConfigDialog(HWND parent, const std::string &currentLocale) {
     // Combo box (indented, below systray radio button)
     HWND hCombo = CreateWindowExW(0, L"ComboBox", L"",
         WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP,
-        40, 115, 400, 200,
+        40, 115, 540, 200,
         hDlg, (HMENU)IDC_COMBO_POLLING, NULL, NULL);
     SendMessageW(hCombo, WM_SETFONT, (WPARAM)hFont, TRUE);
     
@@ -344,7 +345,7 @@ bool ShowConfigDialog(HWND parent, const std::string &currentLocale) {
     // Status label (centered between dropdown and buttons)
     HWND hStatus = CreateWindowExW(0, L"Static", L"",
         WS_CHILD | WS_VISIBLE | SS_CENTER,
-        20, 155, 420, 20,
+        20, 155, 560, 20,
         hDlg, (HMENU)IDC_LBL_STATUS, NULL, NULL);
     SendMessageW(hStatus, WM_SETFONT, (WPARAM)hFont, TRUE);
     UpdateStatusLabel(hDlg, hStatus, settings, trans);
@@ -352,28 +353,28 @@ bool ShowConfigDialog(HWND parent, const std::string &currentLocale) {
     // Apply button
     HWND hApply = CreateWindowExW(0, L"Button", t(trans, "config_btn_use").c_str(),
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_TABSTOP,
-        dlgW - 310, dlgH - 70, 90, 32,
+        dlgW - 370, dlgH - 70, 90, 32,
         hDlg, (HMENU)IDC_BTN_APPLY, NULL, NULL);
     SendMessageW(hApply, WM_SETFONT, (WPARAM)hFont, TRUE);
     
     // OK button
     HWND hOK = CreateWindowExW(0, L"Button", t(trans, "config_btn_ok").c_str(),
         WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON | WS_TABSTOP,
-        dlgW - 210, dlgH - 70, 90, 32,
+        dlgW - 270, dlgH - 70, 90, 32,
         hDlg, (HMENU)IDC_BTN_OK, NULL, NULL);
     SendMessageW(hOK, WM_SETFONT, (WPARAM)hFont, TRUE);
     
     // Cancel button
     HWND hCancel = CreateWindowExW(0, L"Button", t(trans, "config_btn_cancel").c_str(),
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_TABSTOP,
-        dlgW - 110, dlgH - 70, 90, 32,
+        dlgW - 170, dlgH - 70, 90, 32,
         hDlg, (HMENU)IDC_BTN_CANCEL, NULL, NULL);
     SendMessageW(hCancel, WM_SETFONT, (WPARAM)hFont, TRUE);
     
-    // "Add to systray now" button (below combo box, only visible when SysTray mode selected)
+    // "Add to systray now" button (left side of button row, only visible when SysTray mode selected)
     HWND hAddToTray = CreateWindowExW(0, L"Button", t(trans, "config_btn_add_to_tray").c_str(),
         WS_CHILD | BS_PUSHBUTTON | WS_TABSTOP,
-        40, 145, 200, 28,
+        20, dlgH - 70, 200, 32,
         hDlg, (HMENU)IDC_BTN_ADD_TO_TRAY, NULL, NULL);
     SendMessageW(hAddToTray, WM_SETFONT, (WPARAM)hFont, TRUE);
     
@@ -446,17 +447,8 @@ bool ShowConfigDialog(HWND parent, const std::string &currentLocale) {
                 }
                 SaveSettings(*pData->settings);
                 
-                // Handle startup shortcut based on mode
-                if (pData->settings->mode == StartupMode::Startup) {
-                    // Mode 1: Create shortcut with --hidden
-                    CreateStartupShortcut();
-                } else if (pData->settings->mode == StartupMode::SysTray) {
-                    // Mode 2: Create shortcut with --systray
-                    CreateStartupShortcut(L"--systray", L"WinUpdate - Windows Update Manager (System Tray)");
-                } else {
-                    // Mode 0: Delete shortcut if it exists
-                    DeleteStartupShortcut();
-                }
+                // Verify and fix startup shortcut to match current mode
+                VerifyStartupShortcut((int)pData->settings->mode);
                 
                 // Reload settings from .ini to ensure status reflects saved state
                 ConfigSettings savedSettings = LoadSettings();
@@ -478,14 +470,8 @@ bool ShowConfigDialog(HWND parent, const std::string &currentLocale) {
                 }
                 SaveSettings(*pData->settings);
                 
-                // Handle startup shortcut based on mode
-                if (pData->settings->mode == StartupMode::Startup) {
-                    // Mode 1: Create shortcut with --hidden
-                    CreateStartupShortcut();
-                } else {
-                    // Mode 0 or 2: Delete shortcut if it exists
-                    DeleteStartupShortcut();
-                }
+                // Verify and fix startup shortcut to match current mode
+                VerifyStartupShortcut((int)pData->settings->mode);
                 
                 *pData->dialogResult = true;
                 *pData->dialogDone = true;
@@ -534,6 +520,12 @@ bool ShowConfigDialog(HWND parent, const std::string &currentLocale) {
     // Message loop
     MSG msg;
     while (!dialogDone && GetMessageW(&msg, NULL, 0, 0)) {
+        // Handle Ctrl+W
+        if (HandleCtrlW(hDlg, msg.message, msg.wParam, msg.lParam)) {
+            dialogDone = true;
+            dialogResult = false;
+            break;
+        }
         if (!IsDialogMessageW(hDlg, &msg)) {
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
