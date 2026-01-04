@@ -47,4 +47,5 @@ config_status_systray_polling=System tray enabled (scan at startup and every %d 
 config_btn_use=Apply
 config_btn_ok=OK
 config_btn_cancel=Cancel
+config_btn_add_to_tray=Add to systray now
 coming_soon=Coming soon...

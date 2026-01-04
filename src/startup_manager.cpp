@@ -30,6 +30,10 @@ bool StartupShortcutExists() {
 }
 
 bool CreateStartupShortcut() {
+    return CreateStartupShortcut(L"--hidden", L"WinUpdate - Windows Update Manager (Hidden Scan)");
+}
+
+bool CreateStartupShortcut(const wchar_t* arguments, const wchar_t* description) {
     // Get the executable path
     wchar_t exePath[MAX_PATH];
     GetModuleFileNameW(NULL, exePath, MAX_PATH);
@@ -59,14 +63,14 @@ bool CreateStartupShortcut() {
         // Set the executable path
         pShellLink->SetPath(exePath);
         
-        // Set arguments to --hidden
-        pShellLink->SetArguments(L"--hidden");
+        // Set arguments
+        pShellLink->SetArguments(arguments);
         
         // Set working directory
         pShellLink->SetWorkingDirectory(workingDir);
         
         // Set description
-        pShellLink->SetDescription(L"WinUpdate - Windows Update Manager (Hidden Scan)");
+        pShellLink->SetDescription(description);
         
         // Get the IPersistFile interface
         hr = pShellLink->QueryInterface(IID_IPersistFile, (void**)&pPersistFile);

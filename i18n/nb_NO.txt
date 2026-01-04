@@ -47,4 +47,5 @@ config_status_systray_polling=Systemstatusfeltet er aktivert (skanner ved oppsta
 config_btn_use=Bruk
 config_btn_ok=OK
 config_btn_cancel=Avbryt
+config_btn_add_to_tray=Legg til i systemstatusfeltet nå
 coming_soon=Kommer snart...

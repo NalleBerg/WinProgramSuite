@@ -69,6 +69,10 @@ if exist "%BUILD_DIR%\WinUpdate.exe" (
 ) else (
     echo [WARN] Built exe not found: %BUILD_DIR%\WinUpdate.exe
 )
+REM copy closetray.exe if it exists
+if exist "%BUILD_DIR%\closetray.exe" (
+    copy /Y "%BUILD_DIR%\closetray.exe" "%PACKAGE_DIR%\closetray.exe" >nul 2>&1
+)
 if exist "wup_settings.txt" copy /Y "wup_settings.txt" "%PACKAGE_DIR%\wup_settings.txt" >nul 2>&1
 if exist "README.md" copy /Y "README.md" "%PACKAGE_DIR%\README.md" >nul 2>&1
 if exist "LICENSE.md" copy /Y "LICENSE.md" "%PACKAGE_DIR%\LICENSE.md" >nul 2>&1

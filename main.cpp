@@ -23,6 +23,7 @@
 #include "skip_update.h"
 #include "unskip.h"
 #include "hidden_scan.h"
+#include "system_tray.h"
 // detect nlohmann/json.hpp if available; fall back to ad-hoc parser otherwise
 #if defined(__has_include)
 #  if __has_include(<nlohmann/json.hpp>)
@@ -109,7 +110,7 @@ static HWND g_hLoadingText = NULL;
 static HWND g_hLoadingDesc = NULL;
 static HWND g_hLoadingDots = NULL;
 static HFONT g_hDotsFont = NULL;
-static HWND g_hMainWindow = NULL;
+HWND g_hMainWindow = NULL;  // Non-static for system tray access
 static HWND g_hInstallAnim = NULL;
 static HWND g_hInstallPanel = NULL;
 static HWND g_hTooltipAbout = NULL;
@@ -897,6 +898,8 @@ static void UpdateLastUpdatedLabel(HWND hwnd) {
 
 static void ShowLoading(HWND parent) {
     if (!parent) return;
+    // Don't show loading popup if window is hidden (e.g., in system tray mode)
+    if (!IsWindowVisible(parent)) return;
     if (g_hLoadingPopup && IsWindow(g_hLoadingPopup)) return;
     RECT rc;
     GetWindowRect(parent, &rc);
@@ -1833,6 +1836,13 @@ static void CaptureStartupVersions(const std::string &rawOut,
 }
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    // Debug: Log if we receive message 1025 (WM_TRAYICON)
+    if (uMsg == 1025) {
+        std::ofstream log("C:\\Users\\NalleBerg\\AppData\\Roaming\\WinUpdate\\tray_debug.txt", std::ios::app);
+        log << "WndProc received uMsg=1025 (WM_TRAYICON), wParam=" << wParam << ", lParam=0x" << std::hex << lParam << std::dec << "\n";
+        log.close();
+    }
+    
     static HWND hRadioShow, hRadioAll, hBtnRefresh, hList, hCheckAll, hBtnUpgrade;
     switch (uMsg) {
     case WM_CREATE: {
@@ -2013,9 +2023,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
         if (hBtnUpgrade) EnableWindow(hBtnUpgrade, FALSE);
         EnableWindow(GetDlgItem(hwnd, IDC_CHECK_SELECTALL), FALSE);
         EnableWindow(GetDlgItem(hwnd, IDC_COMBO_LANG), FALSE);
-        // Show descriptive loading overlay and start async refresh
-        ShowLoading(hwnd);
-        if (!g_refresh_in_progress.load()) PostMessageW(hwnd, WM_REFRESH_ASYNC, 0, 0);
+        // Note: Initial scan will be triggered from wWinMain after window is shown
         break;
     }
     case WM_REFRESH_ASYNC: {
@@ -2147,11 +2155,33 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                 // Update Unskip button visibility now that we've reloaded per-user skips
                 UpdateUnskipButton(hwnd);
             } catch(...) {}
-            if (hList) PopulateListView(hList);
+            
+            // If in system tray mode and updates found, show balloon notification
+            if (g_systemTray && g_systemTray->IsActive()) {
+                std::lock_guard<std::mutex> lk(g_packages_mutex);
+                int nonSkippedCount = 0;
+                for (const auto& pkg : g_packages) {
+                    if (g_skipped_versions.find(pkg.first) == g_skipped_versions.end()) {
+                        nonSkippedCount++;
+                    }
+                }
+                
+                if (nonSkippedCount > 0) {
+                    // Show balloon notification
+                    std::wstring title = L"Updates Available";
+                    std::wstringstream msg;
+                    msg << nonSkippedCount << L" update" << (nonSkippedCount > 1 ? L"s" : L"") << L" found. Click to view.";
+                    g_systemTray->ShowBalloon(title, msg.str());
+                }
+            }
         } catch(...) {}
+        
         // Ensure main window is visible and front-most after a refresh completes
-        AppendLog("WM_REFRESH_DONE: refresh complete, forcing main window to foreground\n");
-        TryForceForegroundWindow(hwnd);
+        // (but skip if system tray is active and window is hidden)
+        if (!g_systemTray || !g_systemTray->IsActive() || IsWindowVisible(hwnd)) {
+            AppendLog("WM_REFRESH_DONE: refresh complete, forcing main window to foreground\n");
+            TryForceForegroundWindow(hwnd);
+        }
         // If an install panel exists and is still blocked for destruction, ensure it stays above the list
         if (g_hInstallPanel && IsWindow(g_hInstallPanel) && g_install_block_destroy.load()) {
             AppendLog("WM_REFRESH_DONE: install panel present; reasserting top Z-order\n");
@@ -2439,6 +2469,14 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
         if (wParam == LOADING_TIMER_ID) {
             // loading timer is handled by the popup window; ignore here
             return 0;
+        } else if (g_systemTray) {
+            if (wParam == TIMER_SCAN) {
+                // Time for periodic scan
+                g_systemTray->TriggerScan();
+            } else if (wParam == TIMER_TOOLTIP) {
+                // Update tooltip with next scan time
+                g_systemTray->UpdateNextScanTime();
+            }
         }
         break;
     }
@@ -2550,6 +2588,17 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
         }
         break;
     }
+    case WM_TRAYICON:
+        // Handle system tray icon messages
+        {
+            std::ostringstream _log;
+            _log << "WM_TRAYICON received: wParam=" << wParam << ", lParam=0x" << std::hex << lParam << std::dec << "\n";
+            AppendLog(_log.str());
+        }
+        if (g_systemTray) {
+            return SystemTray::HandleTrayMessage(hwnd, wParam, lParam);
+        }
+        break;
     case WM_COMMAND: {
         // Log incoming WM_COMMAND for debugging (id, hiword, lParam)
         {
@@ -2605,6 +2654,48 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
             break;
         } else if (id == IDC_BTN_CONFIG) {
             ShowConfigDialog(hwnd, g_locale);
+            
+            // Check if "Add to systray now" was clicked
+            if (WasAddToTrayNowClicked()) {
+                // Initialize and add to system tray immediately
+                if (!g_systemTray) {
+                    g_systemTray = new SystemTray();
+                }
+                
+                g_systemTray->Initialize(hwnd);
+                g_systemTray->AddToTray();
+                
+                // Load polling interval from settings
+                char buf[MAX_PATH];
+                DWORD len = GetEnvironmentVariableA("APPDATA", buf, MAX_PATH);
+                std::string settingsPath = (len > 0 && len < MAX_PATH) ? 
+                    (std::string(buf) + "\\WinUpdate\\wup_settings.ini") : "wup_settings.ini";
+                
+                int pollingInterval = 2; // default
+                std::ifstream ifs(settingsPath);
+                if (ifs) {
+                    std::string line;
+                    while (std::getline(ifs, line)) {
+                        if (line.find("polling_interval") != std::string::npos) {
+                            size_t eq = line.find('=');
+                            if (eq != std::string::npos) {
+                                std::string val = line.substr(eq + 1);
+                                pollingInterval = std::stoi(val);
+                            }
+                        }
+                    }
+                }
+                
+                // Start scan timer and tooltip timer
+                g_systemTray->StartScanTimer(pollingInterval);
+                g_systemTray->StartTooltipTimer();
+                
+                // Trigger immediate scan
+                g_systemTray->TriggerScan();
+                
+                // Hide main window
+                ShowWindow(hwnd, SW_HIDE);
+            }
             break;
         } else if (id == IDC_BTN_UNSKIP) {
             // Open Unskip dialog to allow removing skipped entries
@@ -2616,6 +2707,27 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                     if (!g_refresh_in_progress.load()) PostMessageW(hwnd, WM_REFRESH_ASYNC, 1, 0);
                 }
             } catch(...) {}
+            break;
+        } else if (id == IDM_SCAN_NOW) {
+            // System tray "Scan now!" clicked
+            if (g_systemTray) {
+                g_systemTray->TriggerScan();
+            }
+            break;
+        } else if (id == IDM_OPEN_WINDOW) {
+            // System tray "Open main window" clicked
+            ShowWindow(hwnd, SW_SHOW);
+            ShowWindow(hwnd, SW_RESTORE);
+            SetForegroundWindow(hwnd);
+            break;
+        } else if (id == IDM_EXIT) {
+            // System tray "Exit" clicked
+            if (g_systemTray) {
+                g_systemTray->RemoveFromTray();
+                delete g_systemTray;
+                g_systemTray = nullptr;
+            }
+            PostQuitMessage(0);
             break;
         } else if (id == IDC_BTN_DONE) {
             // Protect against programmatic or accidental WM_COMMAND posts: only accept real button clicks
@@ -2980,6 +3092,15 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
         }
         break;
     }
+    case WM_CLOSE:
+        // If system tray is active, hide window instead of destroying
+        if (g_systemTray && g_systemTray->IsActive()) {
+            ShowWindow(hwnd, SW_HIDE);
+            return 0;
+        }
+        // Otherwise, allow normal close/destroy
+        return DefWindowProcW(hwnd, uMsg, wParam, lParam);
+    
     case WM_DESTROY:
         if (g_hLastUpdatedFont) {
             DeleteObject(g_hLastUpdatedFont);
@@ -3000,10 +3121,26 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 }
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR pCmdLine, int nCmdShow) {
-    // Check for --hidden command-line parameter
+    // Check if another instance is already running
+    HANDLE hMutex = CreateMutexW(NULL, FALSE, L"WinUpdate_SingleInstance_Mutex");
+    if (GetLastError() == ERROR_ALREADY_EXISTS) {
+        // Another instance is running - find its window and show it
+        HWND hwndExisting = FindWindowW(CLASS_NAME, NULL);
+        if (hwndExisting) {
+            // If it's hidden in tray, show it
+            ShowWindow(hwndExisting, SW_SHOW);
+            ShowWindow(hwndExisting, SW_RESTORE);
+            SetForegroundWindow(hwndExisting);
+        }
+        if (hMutex) CloseHandle(hMutex);
+        return 0;
+    }
+    
+    // Check for command-line parameters
     std::wstring cmdLine(pCmdLine ? pCmdLine : L"");
+    
+    // --hidden: Run hidden scan - only show UI if updates found
     if (cmdLine.find(L"--hidden") != std::wstring::npos) {
-        // Run hidden scan - only show UI if updates found
         // Initialize translations first
         InitDefaultTranslations();
         std::string saved = LoadLocaleSetting();
@@ -3019,6 +3156,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR pCmdLine, int nCmdShow
         // Exit after scan (if UI shown, it will be a separate process)
         return 0;
     }
+    
+    // --systray: Force systray mode (hide window initially)
+    bool forceSysTray = (cmdLine.find(L"--systray") != std::wstring::npos);
     
     WNDCLASSW wc = { };
     wc.lpfnWndProc = WndProc;
@@ -3067,18 +3207,89 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR pCmdLine, int nCmdShow
     HWND hwnd = CreateWindowExW(0, CLASS_NAME, winTitle.c_str(), WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT, 736, 430, NULL, NULL, hInstance, NULL);
     if (!hwnd) return 0;
+    
+    // Store main window handle globally
+    g_hMainWindow = hwnd;
+    
     // load and set application icons (embedded in resources)
     HICON hIconBig = (HICON)LoadImageW(hInstance, MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON, 48, 48, LR_DEFAULTCOLOR);
     HICON hIconSmall = (HICON)LoadImageW(hInstance, MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON, 16, 16, LR_DEFAULTCOLOR);
     if (hIconBig) SendMessageW(hwnd, WM_SETICON, ICON_BIG, (LPARAM)hIconBig);
     if (hIconSmall) SendMessageW(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)hIconSmall);
+    
+    // Check if we should start in system tray mode (Mode 2)
+    bool startInTray = false;
+    char buf[MAX_PATH];
+    DWORD lenEnv = GetEnvironmentVariableA("APPDATA", buf, MAX_PATH);
+    std::string settingsPath = (lenEnv > 0 && lenEnv < MAX_PATH) ? 
+        (std::string(buf) + "\\WinUpdate\\wup_settings.ini") : "wup_settings.ini";
+    
+    int mode = 0;
+    int pollingInterval = 2;
+    std::ifstream ifs(settingsPath);
+    if (ifs) {
+        std::string line;
+        bool inSystemTray = false;
+        while (std::getline(ifs, line)) {
+            if (line.find("[systemtraystatus]") != std::string::npos) {
+                inSystemTray = true;
+            } else if (line[0] == '[') {
+                inSystemTray = false;
+            } else if (inSystemTray) {
+                if (line.find("mode=") != std::string::npos) {
+                    size_t eq = line.find('=');
+                    if (eq != std::string::npos) {
+                        std::string val = line.substr(eq + 1);
+                        mode = std::stoi(val);
+                    }
+                } else if (line.find("polling_interval") != std::string::npos) {
+                    size_t eq = line.find('=');
+                    if (eq != std::string::npos) {
+                        std::string val = line.substr(eq + 1);
+                        pollingInterval = std::stoi(val);
+                    }
+                }
+            }
+        }
+    }
+    
+    if (mode == 2 || forceSysTray) {
+        startInTray = true;
+        // Don't show window initially
+        nCmdShow = SW_HIDE;
+    }
+    
     ShowWindow(hwnd, nCmdShow);
+    
+    // If starting in system tray mode, initialize tray icon
+    if (startInTray) {
+        g_systemTray = new SystemTray();
+        g_systemTray->Initialize(hwnd);
+        g_systemTray->AddToTray();
+        g_systemTray->StartScanTimer(pollingInterval);
+        g_systemTray->StartTooltipTimer();
+        
+        // Trigger immediate scan on startup (will run silently in background)
+        g_systemTray->TriggerScan();
+    } else {
+        // Normal mode: show loading animation and trigger initial scan
+        ShowLoading(hwnd);
+        if (!g_refresh_in_progress.load()) {
+            PostMessageW(hwnd, WM_REFRESH_ASYNC, 0, 0);
+        }
+    }
 
     MSG msg{};
     while (GetMessageW(&msg, NULL, 0, 0)) {
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
+    
+    // Cleanup mutex on exit
+    if (hMutex) {
+        CloseHandle(hMutex);
+    }
+    
     return 0;
 }
 

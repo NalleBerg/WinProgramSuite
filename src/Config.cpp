@@ -16,6 +16,7 @@
 #define IDC_BTN_APPLY 3006
 #define IDC_BTN_OK 3007
 #define IDC_BTN_CANCEL 3008
+#define IDC_BTN_ADD_TO_TRAY 3009
 
 // Polling interval options (prime numbers in hours)
 static const int POLLING_INTERVALS[] = {0, 2, 3, 5, 7, 11, 13, 17, 19, 23};
@@ -98,6 +99,15 @@ static std::wstring t(const std::unordered_map<std::string, std::wstring> &trans
     auto it = trans.find(key);
     if (it != trans.end()) return it->second;
     return Utf8ToWide(key);
+}
+
+// Global flag to track if "Add to systray now" button was clicked
+static bool g_addToTrayNowClicked = false;
+
+bool WasAddToTrayNowClicked() {
+    bool result = g_addToTrayNowClicked;
+    g_addToTrayNowClicked = false; // Reset after reading
+    return result;
 }
 
 static ConfigSettings LoadSettings() {
@@ -360,11 +370,22 @@ bool ShowConfigDialog(HWND parent, const std::string &currentLocale) {
         hDlg, (HMENU)IDC_BTN_CANCEL, NULL, NULL);
     SendMessageW(hCancel, WM_SETFONT, (WPARAM)hFont, TRUE);
     
+    // "Add to systray now" button (below combo box, only visible when SysTray mode selected)
+    HWND hAddToTray = CreateWindowExW(0, L"Button", t(trans, "config_btn_add_to_tray").c_str(),
+        WS_CHILD | BS_PUSHBUTTON | WS_TABSTOP,
+        40, 145, 200, 28,
+        hDlg, (HMENU)IDC_BTN_ADD_TO_TRAY, NULL, NULL);
+    SendMessageW(hAddToTray, WM_SETFONT, (WPARAM)hFont, TRUE);
+    
+    // Show/hide button based on current mode
+    ShowWindow(hAddToTray, (settings.mode == StartupMode::SysTray) ? SW_SHOW : SW_HIDE);
+    
     // Subclass dialog to handle messages
     struct DialogData {
         ConfigSettings* settings;
         HWND hCombo;
         HWND hStatus;
+        HWND hAddToTray;
         const std::unordered_map<std::string, std::wstring>* trans;
         bool* dialogResult;
         bool* dialogDone;
@@ -374,6 +395,7 @@ bool ShowConfigDialog(HWND parent, const std::string &currentLocale) {
     dlgData.settings = &settings;
     dlgData.hCombo = hCombo;
     dlgData.hStatus = hStatus;
+    dlgData.hAddToTray = hAddToTray;
     dlgData.trans = &trans;
     bool dialogResult = false;
     bool dialogDone = false;
@@ -392,12 +414,15 @@ bool ShowConfigDialog(HWND parent, const std::string &currentLocale) {
                 if (IsDlgButtonChecked(hwnd, IDC_RADIO_MANUAL) == BST_CHECKED) {
                     pData->settings->mode = StartupMode::Manual;
                     EnableWindow(pData->hCombo, FALSE);
+                    ShowWindow(pData->hAddToTray, SW_HIDE);
                 } else if (IsDlgButtonChecked(hwnd, IDC_RADIO_STARTUP) == BST_CHECKED) {
                     pData->settings->mode = StartupMode::Startup;
                     EnableWindow(pData->hCombo, FALSE);
+                    ShowWindow(pData->hAddToTray, SW_HIDE);
                 } else if (IsDlgButtonChecked(hwnd, IDC_RADIO_SYSTRAY) == BST_CHECKED) {
                     pData->settings->mode = StartupMode::SysTray;
                     EnableWindow(pData->hCombo, TRUE);
+                    ShowWindow(pData->hAddToTray, SW_SHOW);
                 }
                 return 0;
             } else if (id == IDC_COMBO_POLLING && code == CBN_SELCHANGE) {
@@ -425,8 +450,11 @@ bool ShowConfigDialog(HWND parent, const std::string &currentLocale) {
                 if (pData->settings->mode == StartupMode::Startup) {
                     // Mode 1: Create shortcut with --hidden
                     CreateStartupShortcut();
+                } else if (pData->settings->mode == StartupMode::SysTray) {
+                    // Mode 2: Create shortcut with --systray
+                    CreateStartupShortcut(L"--systray", L"WinUpdate - Windows Update Manager (System Tray)");
                 } else {
-                    // Mode 0 or 2: Delete shortcut if it exists
+                    // Mode 0: Delete shortcut if it exists
                     DeleteStartupShortcut();
                 }
                 
@@ -458,6 +486,28 @@ bool ShowConfigDialog(HWND parent, const std::string &currentLocale) {
                     // Mode 0 or 2: Delete shortcut if it exists
                     DeleteStartupShortcut();
                 }
+                
+                *pData->dialogResult = true;
+                *pData->dialogDone = true;
+                PostMessageW(hwnd, WM_CLOSE, 0, 0);
+                return 0;
+            } else if (id == IDC_BTN_ADD_TO_TRAY) {
+                // "Add to systray now" button clicked
+                // Read current settings and save
+                if (IsDlgButtonChecked(hwnd, IDC_RADIO_SYSTRAY) == BST_CHECKED) {
+                    pData->settings->mode = StartupMode::SysTray;
+                }
+                int sel = (int)SendMessageW(pData->hCombo, CB_GETCURSEL, 0, 0);
+                if (sel >= 0 && sel < POLLING_COUNT) {
+                    pData->settings->pollingInterval = POLLING_INTERVALS[sel];
+                }
+                SaveSettings(*pData->settings);
+                
+                // Mode 2: Create startup shortcut with --systray
+                CreateStartupShortcut(L"--systray", L"WinUpdate - Windows Update Manager (System Tray)");
+                
+                // Set flag to indicate we should add to tray now
+                g_addToTrayNowClicked = true;
                 
                 *pData->dialogResult = true;
                 *pData->dialogDone = true;

@@ -14,6 +14,7 @@
 /tools/
 shini.bat
 test*.*
+closetray.cpp
 
 # Ignore WinUpdate runtime logs and winget fallback/raw captures
 # All files beginning with "wup" (e.g., wup_run_log.txt)

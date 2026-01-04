@@ -40,6 +40,9 @@ endif()
 if(EXISTS ${CMAKE_SOURCE_DIR}/src/startup_manager.cpp)
   list(APPEND SOURCES ${CMAKE_SOURCE_DIR}/src/startup_manager.cpp)
 endif()
+if(EXISTS ${CMAKE_SOURCE_DIR}/src/system_tray.cpp)
+  list(APPEND SOURCES ${CMAKE_SOURCE_DIR}/src/system_tray.cpp)
+endif()
 if(EXISTS ${CMAKE_SOURCE_DIR}/build/tooltips.cpp)
   list(APPEND SOURCES ${CMAKE_SOURCE_DIR}/build/tooltips.cpp)
 endif()
@@ -65,6 +68,14 @@ endif()
 
 if (WIN32)
   target_link_libraries(WinUpdate PRIVATE comctl32 shlwapi ole32 oleaut32)
+endif()
+
+# Build closetray.exe - small utility to close WinUpdate from system tray
+if(EXISTS ${CMAKE_SOURCE_DIR}/closetray.cpp)
+  add_executable(closetray closetray.cpp)
+  set_target_properties(closetray PROPERTIES
+    WIN32_EXECUTABLE FALSE  # Console application
+  )
 endif()
 
 # Fetch nlohmann/json for robust JSON parsing

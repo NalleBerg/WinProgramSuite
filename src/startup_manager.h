@@ -7,6 +7,10 @@
 // Returns true on success, false on failure
 bool CreateStartupShortcut();
 
+// Create a Windows startup shortcut with custom arguments
+// Returns true on success, false on failure
+bool CreateStartupShortcut(const wchar_t* arguments, const wchar_t* description);
+
 // Delete the Windows startup shortcut if it exists
 // Returns true if shortcut was deleted or didn't exist, false on error
 bool DeleteStartupShortcut();
