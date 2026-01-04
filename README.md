@@ -12,6 +12,11 @@
 - **🌍 Multi-Language Support** — English (GB) and Norwegian (Bokmål) built-in
 - **🎨 Clean UI** — Modern Windows interface with hyperlinks and visual feedback
 - **🔐 Single UAC Prompt** — One elevation for all updates (not one per package)
+- **🔔 System Tray Mode** — Run in background with automatic periodic scanning
+- **⚙️ Three Configuration Modes:**
+  - **Mode 0 (Manual):** Default mode - manually scan when you open the app
+  - **Mode 1 (Hidden Scan):** Runs hidden scan at Windows startup, shows window if updates found
+  - **Mode 2 (System Tray):** Stays in system tray, automatically scans every X hours with balloon notifications
 
 ## 🚀 Quick Start
 
@@ -51,6 +56,16 @@ cmake --build . --config Release
 4. **Skip Versions** (Optional) — Click the "Skip" link to skip specific versions
 5. **Upgrade** — Click "Upgrade now" to install selected updates
 6. **Manage Skipped** — Use the "Unskip" button to review and remove skips
+7. **Configure** — Click "Config" to choose between Manual, Hidden Scan, or System Tray mode
+
+### System Tray Mode
+When Mode 2 (System Tray) is selected:
+- App icon appears in system tray showing next scan time on hover
+- Right-click for menu: "⚡ Scan now!", "🪟 Open main window", "❌ Exit"
+- Automatically scans every X hours (configurable: 1-24 hours)
+- Balloon notification when updates are found (click to open window)
+- Silent automatic scans (only manual scans show "You are updated!" when no updates)
+- Closing the window hides it to tray instead of exiting
 
 ## 🛠️ Current Status
 
@@ -58,14 +73,15 @@ cmake --build . --config Release
 - Core update functionality
 - Skip/Unskip management
 - Multi-language support (English/Norwegian)
-- Config dialog for future systray integration
+- System tray with automatic periodic scanning
+- Three configuration modes with startup integration
+- Single instance handling with window activation
 
 **🚧 In Progress:**
-- System tray functionality
 - About dialog redesign
 - Enhanced update display
 
-This is a work in progress, but it's fully functional as a local application!
+This is a work in progress, but it's fully functional!
 
 ## 📂 File Locations
 

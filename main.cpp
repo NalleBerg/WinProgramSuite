@@ -2654,8 +2654,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
             if (!g_refresh_in_progress.load()) PostMessageW(hwnd, WM_REFRESH_ASYNC, 1, 0);
             break;
         } else if (id == IDC_BTN_ABOUT) {
-            // Disabled - About dialog under development
-            // ShowAboutDialog(hwnd);
+            // Re-enabled for development
+            ShowAboutDialog(hwnd);
             break;
         } else if (id == IDC_BTN_CONFIG) {
             ShowConfigDialog(hwnd, g_locale);
