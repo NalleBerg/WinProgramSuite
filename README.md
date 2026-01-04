@@ -12,7 +12,9 @@
 - **🌍 Multi-Language Support** — English (GB) and Norwegian (Bokmål) built-in
 - **🎨 Clean UI** — Modern Windows interface with hyperlinks and visual feedback
 - **🔐 Single UAC Prompt** — One elevation for all updates (not one per package)
+- **� Install Dialog** — Animated progress dialog with real-time output during installation
 - **🔔 System Tray Mode** — Run in background with automatic periodic scanning
+- **🚀 Startup Integration** — Automatic shortcut management with verification and self-healing
 - **⚙️ Three Configuration Modes:**
   - **Mode 0 (Manual):** Default mode - manually scan when you open the app
   - **Mode 1 (Hidden Scan):** Runs hidden scan at Windows startup, shows window if updates found
@@ -66,16 +68,28 @@ When Mode 2 (System Tray) is selected:
 - Balloon notification when updates are found (click to open window)
 - Silent automatic scans (only manual scans show "You are updated!" when no updates)
 - Closing the window hides it to tray instead of exiting
+- Startup shortcut automatically created with `--systray` argument
+
+### Startup Shortcut Management
+WinUpdate automatically manages Windows startup shortcuts:
+- **Mode 1 (Hidden Scan):** Creates shortcut with `--hidden` argument for silent startup scan
+- **Mode 2 (System Tray):** Creates shortcut with `--systray` argument to start in tray
+- **Mode 0 (Manual):** Removes startup shortcut if it exists
+- **Self-Healing:** Application verifies shortcut on startup and fixes if it doesn't match configuration
+- Shortcuts are created in: `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`
 
 ## 🛠️ Current Status
 
 **✅ Working:**
-- Core update functionality
+- Core update functionality with animated install dialog
 - Skip/Unskip management
 - Multi-language support (English/Norwegian)
 - System tray with automatic periodic scanning
 - Three configuration modes with startup integration
+- Automatic startup shortcut management with self-healing
 - Single instance handling with window activation
+- Select All button for batch operations
+- PowerShell-based UAC elevation
 
 **🚧 In Progress:**
 - About dialog redesign

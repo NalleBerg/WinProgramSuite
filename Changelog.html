@@ -1,4 +1,22 @@
 <h3 style="text-align: center;">&nbsp;</h3>
+<h3 style="text-align: center;"><span style="color: #ff0000;">Version 2026.01.04.A</span></h3>
+<p><strong>New in this version (04 January 2026, 22:00 GMT+1):</strong></p>
+<ul>
+<li><strong>Install Dialog with Animation:</strong> New modal dialog for package installation with animated progress indicator (1px moving dot, 1ms timer)</li>
+<li><strong>Select All Button:</strong> Fixed button functionality - changed from checkbox (ID 2001) to pushbutton (ID 2099) to avoid control conflicts</li>
+<li><strong>UAC Elevation with PowerShell:</strong> Package installation now uses PowerShell instead of batch files for single UAC prompt and cleaner output</li>
+<li><strong>Startup Shortcut Management:</strong> Automatic verification and correction of Windows startup shortcuts based on configuration mode</li>
+<li><strong>Startup Verification on Launch:</strong> Application checks startup shortcut matches configuration mode and fixes discrepancies automatically</li>
+<li><strong>Config Dialog Layout Improvements:</strong> Widened dialog to 600px with consistent 10px button spacing for better visual layout</li>
+<li><strong>"Add to systray now" Button Positioning:</strong> Moved button to bottom row alongside other buttons for cleaner UI</li>
+<li><strong>Mode-Specific Shortcut Handling:</strong> Mode 0 (Manual) removes shortcut, Mode 1 (Startup) creates with --hidden, Mode 2 (SysTray) creates with --systray</li>
+<li><strong>Install Dialog i18n:</strong> Added translations for "no_packages_selected" and "install_done" messages in English and Norwegian</li>
+<li><strong>Temporary File Cleanup:</strong> Guaranteed cleanup of installation output files in all execution paths</li>
+<li><strong>Done Button Sizing:</strong> Install dialog Done button now 150px wide positioned at H-70 for proper visibility</li>
+<li><strong>Apply/OK Button Consistency:</strong> Both buttons now use VerifyStartupShortcut() function for reliable shortcut management</li>
+</ul>
+
+<h3 style="text-align: center;">&nbsp;</h3>
 <h3 style="text-align: center;"><span style="color: #ff0000;">Version 2026.01.04</span></h3>
 <p><strong>New in this version (04 January 2026, 18:30 GMT+1):</strong></p>
 <ul>
