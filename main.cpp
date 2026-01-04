@@ -2157,7 +2157,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                 UpdateUnskipButton(hwnd);
             } catch(...) {}
             
-            // If in system tray mode and updates found, show balloon notification
+            // If in system tray mode, show balloon notification
             if (g_systemTray && g_systemTray->IsActive()) {
                 std::lock_guard<std::mutex> lk(g_packages_mutex);
                 int nonSkippedCount = 0;
@@ -2168,13 +2168,14 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                 }
                 
                 if (nonSkippedCount > 0) {
-                    // Show balloon notification
+                    // Always show notification when updates are found
                     std::wstring title = L"Updates Available";
                     std::wstringstream msg;
                     msg << nonSkippedCount << L" update" << (nonSkippedCount > 1 ? L"s" : L"") << L" found. Click to view.";
                     g_systemTray->ShowBalloon(title, msg.str());
-                } else {
-                    // No updates available
+                } else if (wParam) {
+                    // Only show "You are updated!" if this was a manual scan (wParam == 1)
+                    // Don't show for automatic periodic scans (would be annoying)
                     g_systemTray->ShowBalloon(L"WinUpdate", L"You are updated!");
                 }
             }
@@ -2475,8 +2476,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
             return 0;
         } else if (g_systemTray) {
             if (wParam == TIMER_SCAN) {
-                // Time for periodic scan
-                g_systemTray->TriggerScan();
+                // Time for periodic scan (automatic, not manual)
+                g_systemTray->TriggerScan(false);
             } else if (wParam == TIMER_TOOLTIP) {
                 // Update tooltip with next scan time
                 g_systemTray->UpdateNextScanTime();

@@ -48,7 +48,8 @@ public:
     std::wstring GetNextScanTimeString();
     
     // Trigger immediate scan
-    void TriggerScan();
+    // manual: true for user-initiated scans, false for automatic timer scans
+    void TriggerScan(bool manual = true);
     
     // Check if tray icon is active
     bool IsActive() const { return m_active; }

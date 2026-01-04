@@ -42,7 +42,7 @@ bool SystemTray::Initialize(HWND hwnd) {
     m_nid.cbSize = sizeof(NOTIFYICONDATAW);
     m_nid.hWnd = hwnd;
     m_nid.uID = 1;
-    m_nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+    m_nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP | NIF_SHOWTIP;
     m_nid.uCallbackMessage = WM_TRAYICON;
     
     // Load application icon (IDI_APP_ICON = 101)
@@ -102,9 +102,16 @@ bool SystemTray::UpdateTooltip(const std::wstring& text) {
     if (!m_active) return false;
     
     wcscpy_s(m_nid.szTip, text.c_str());
-    m_nid.uFlags = NIF_TIP;
+    m_nid.uFlags = NIF_TIP | NIF_SHOWTIP;
     
-    return Shell_NotifyIconW(NIM_MODIFY, &m_nid) != FALSE;
+    // Debug logging
+    std::ofstream log("C:\\Users\\NalleBerg\\AppData\\Roaming\\WinUpdate\\tray_debug.txt", std::ios::app);
+    log << "UpdateTooltip called with text: " << std::string(text.begin(), text.end()) << "\n";
+    BOOL result = Shell_NotifyIconW(NIM_MODIFY, &m_nid);
+    log << "Shell_NotifyIconW result: " << result << "\n";
+    log.close();
+    
+    return result != FALSE;
 }
 
 bool SystemTray::ShowBalloon(const std::wstring& title, const std::wstring& text) {
@@ -206,44 +213,28 @@ void SystemTray::CalculateNextScanTime() {
 
 void SystemTray::UpdateNextScanTime() {
     std::wstring timeStr = GetNextScanTimeString();
+    
+    // Single line tooltip: "WinUpdate - Next scan: HH:MM"
     std::wstring tooltip = L"WinUpdate - Next scan: " + timeStr;
+    
+    // Debug logging
+    std::ofstream log("C:\\Users\\NalleBerg\\AppData\\Roaming\\WinUpdate\\tray_debug.txt", std::ios::app);
+    log << "UpdateNextScanTime: tooltip = " << std::string(tooltip.begin(), tooltip.end()) << "\n";
+    log.close();
+    
     UpdateTooltip(tooltip);
 }
 
 std::wstring SystemTray::GetNextScanTimeString() {
-    // Get current time
-    SYSTEMTIME currentTime;
-    GetLocalTime(&currentTime);
-    
-    // Convert both times to FILETIME for comparison
-    FILETIME ftCurrent, ftNext;
-    SystemTimeToFileTime(&currentTime, &ftCurrent);
-    SystemTimeToFileTime(&m_nextScanTime, &ftNext);
-    
-    // Convert to ULARGE_INTEGER for subtraction
-    ULARGE_INTEGER uliCurrent, uliNext;
-    uliCurrent.LowPart = ftCurrent.dwLowDateTime;
-    uliCurrent.HighPart = ftCurrent.dwHighDateTime;
-    uliNext.LowPart = ftNext.dwLowDateTime;
-    uliNext.HighPart = ftNext.dwHighDateTime;
-    
-    // Calculate difference in 100-nanosecond intervals
-    LONGLONG diff = uliNext.QuadPart - uliCurrent.QuadPart;
-    
-    // Convert to minutes and hours
-    LONGLONG totalMinutes = diff / 600000000LL; // 100-nanoseconds to minutes
-    int hours = (int)(totalMinutes / 60);
-    int minutes = (int)(totalMinutes % 60);
-    
-    // Format as HH:MM
+    // Return the actual clock time when next scan will run (not countdown)
     std::wstringstream ss;
-    ss << std::setfill(L'0') << std::setw(2) << hours 
+    ss << std::setfill(L'0') << std::setw(2) << m_nextScanTime.wHour 
        << L":" 
-       << std::setfill(L'0') << std::setw(2) << minutes;
+       << std::setfill(L'0') << std::setw(2) << m_nextScanTime.wMinute;
     return ss.str();
 }
 
-void SystemTray::TriggerScan() {
+void SystemTray::TriggerScan(bool manual) {
     // Reset scan timer
     StopScanTimer();
     StartScanTimer(m_pollingIntervalHours);
@@ -253,7 +244,8 @@ void SystemTray::TriggerScan() {
     extern HWND g_hMainWindow;
     if (g_hMainWindow) {
         // WM_REFRESH_ASYNC is defined in main.cpp as (WM_APP + 1)
-        PostMessageW(g_hMainWindow, WM_APP + 1, 1, 0);
+        // wParam: 1 = manual, 0 = automatic
+        PostMessageW(g_hMainWindow, WM_APP + 1, manual ? 1 : 0, 0);
     }
 }
 
