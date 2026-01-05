@@ -341,6 +341,10 @@ bool ShowInstallDialog(HWND hParent, const std::vector<std::string>& packageIds,
     ShowWindow(hwnd, SW_SHOW);
     UpdateWindow(hwnd);
     
+    // Update overall status with correct count
+    std::wstring initialStatus = L"Installing 0 of " + std::to_wstring(packageIds.size());
+    SendMessageW(hOverallStatus, WM_SETTEXT, 0, (LPARAM)initialStatus.c_str());
+    
     // Generate unique temp file name for output only (no batch file)
     wchar_t tempPath[MAX_PATH];
     GetTempPathW(MAX_PATH, tempPath);
@@ -348,17 +352,28 @@ bool ShowInstallDialog(HWND hParent, const std::vector<std::string>& packageIds,
     
     // Start winget in background thread with UAC elevation
     std::thread([hwnd, hOut, hProg, hStatus, hDone, hAnim, hOverallStatus, packageIds, outputFile]() {
-        // Build winget command
-        std::wstring cmd = L"winget upgrade";
-        for (const auto& id : packageIds) {
-            cmd += L" --id \"" + Utf8ToWide(id) + L"\"";
+        // Update status to show starting
+        std::wstring startStatus = L"Installing 1 of " + std::to_wstring(packageIds.size());
+        SendMessageW(hOverallStatus, WM_SETTEXT, 0, (LPARAM)startStatus.c_str());
+        
+        // Show animation from the start
+        ShowWindow(hAnim, SW_SHOW);
+        
+        // Build PowerShell script that installs each package sequentially
+        std::wstring script = L"";
+        for (size_t i = 0; i < packageIds.size(); i++) {
+            if (i > 0) {
+                script += L"; Write-Output ''; Write-Output '========================================'; ";
+                script += L"Write-Output 'Package " + std::to_wstring(i + 1) + L" of " + std::to_wstring(packageIds.size()) + L"'; ";
+                script += L"Write-Output '========================================'; Write-Output ''; ";
+            }
+            script += L"winget upgrade --id '" + Utf8ToWide(packageIds[i]) + L"' --accept-package-agreements --accept-source-agreements";
         }
-        cmd += L" --accept-package-agreements --accept-source-agreements";
         
-        // Build PowerShell command with output redirection
-        std::wstring fullCmd = L"-NoProfile -ExecutionPolicy Bypass -Command \"& {" + cmd + L"} *>&1 | Out-File -FilePath '" + outputFile + L"' -Encoding UTF8\"";
+        // Build PowerShell command with output redirection and force flush
+        std::wstring fullCmd = L"-NoProfile -ExecutionPolicy Bypass -Command \"& {" + script + L"} *>&1 | Tee-Object -FilePath '" + outputFile + L"'\"";
         
-        // Run PowerShell elevated with UAC
+        // Run PowerShell elevated with UAC (single prompt for all packages)
         SHELLEXECUTEINFOW sei{};
         sei.cbSize = sizeof(sei);
         sei.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
@@ -432,7 +447,7 @@ bool ShowInstallDialog(HWND hParent, const std::vector<std::string>& packageIds,
             finalFile.close();
         }
         
-        // ALWAYS clean up temp file (no batch file to clean)
+        // ALWAYS clean up temp file
         DeleteFileW(outputFile.c_str());
         
         // Hide animation, show completion
