@@ -4,6 +4,7 @@
 #include <sstream>
 #include <iomanip>
 #include <fstream>
+#include <atomic>
 
 // Define notification messages if not already defined (for older SDKs)
 #ifndef NIN_SELECT
@@ -18,6 +19,9 @@
 
 // External references
 extern HWND g_hMainWindow;
+extern std::atomic<bool> g_refresh_in_progress;
+
+#define WM_REFRESH_ASYNC (WM_APP + 1)
 
 // Global instance
 SystemTray* g_systemTray = nullptr;
@@ -274,6 +278,10 @@ LRESULT SystemTray::HandleTrayMessage(HWND hwnd, WPARAM wParam, LPARAM lParam) {
             ShowWindow(hwnd, SW_SHOW);
             ShowWindow(hwnd, SW_RESTORE);
             SetForegroundWindow(hwnd);
+            // Trigger a refresh scan if one isn't already running
+            if (!g_refresh_in_progress.load()) {
+                PostMessageW(hwnd, WM_REFRESH_ASYNC, 1, 0);  // 1 = manual refresh
+            }
             break;
             
         case WM_CONTEXTMENU:      // Right-click (version 4)
@@ -289,6 +297,10 @@ LRESULT SystemTray::HandleTrayMessage(HWND hwnd, WPARAM wParam, LPARAM lParam) {
             ShowWindow(hwnd, SW_SHOW);
             ShowWindow(hwnd, SW_RESTORE);
             SetForegroundWindow(hwnd);
+            // Trigger a refresh scan if one isn't already running
+            if (!g_refresh_in_progress.load()) {
+                PostMessageW(hwnd, WM_REFRESH_ASYNC, 1, 0);  // 1 = manual refresh
+            }
             break;
     }
     

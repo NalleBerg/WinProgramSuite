@@ -70,6 +70,7 @@ const wchar_t CLASS_NAME[] = L"WinUpdateClass";
 #define WM_REFRESH_ASYNC (WM_APP + 1)
 #define WM_REFRESH_DONE  (WM_APP + 2)
 #define WM_INSTALL_DONE  (WM_APP + 5)
+#define WM_SHOW_FROM_SECOND_INSTANCE (WM_APP + 10)
 
 // Forward declarations for functions defined later
 static std::pair<int,std::string> RunProcessCaptureExitCode(const std::wstring &cmd, int timeoutMs);
@@ -2861,6 +2862,17 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
         // Otherwise, allow normal close/destroy
         return DefWindowProcW(hwnd, uMsg, wParam, lParam);
     
+    case WM_SHOW_FROM_SECOND_INSTANCE:
+        // Another instance was launched - show this window and trigger a scan
+        ShowWindow(hwnd, SW_SHOW);
+        ShowWindow(hwnd, SW_RESTORE);
+        SetForegroundWindow(hwnd);
+        // Trigger a refresh scan if one isn't already running
+        if (!g_refresh_in_progress.load()) {
+            PostMessageW(hwnd, WM_REFRESH_ASYNC, 1, 0);  // 1 = manual refresh
+        }
+        break;
+    
     case WM_DESTROY:
         if (g_hLastUpdatedFont) {
             DeleteObject(g_hLastUpdatedFont);
@@ -2884,13 +2896,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR pCmdLine, int nCmdShow
     // Check if another instance is already running
     HANDLE hMutex = CreateMutexW(NULL, FALSE, L"WinUpdate_SingleInstance_Mutex");
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
-        // Another instance is running - find its window and show it
+        // Another instance is running - find its window and tell it to show itself and scan
         HWND hwndExisting = FindWindowW(CLASS_NAME, NULL);
         if (hwndExisting) {
-            // If it's hidden in tray, show it
-            ShowWindow(hwndExisting, SW_SHOW);
-            ShowWindow(hwndExisting, SW_RESTORE);
-            SetForegroundWindow(hwndExisting);
+            // Send custom message to show window and trigger scan
+            PostMessageW(hwndExisting, WM_SHOW_FROM_SECOND_INSTANCE, 0, 0);
         }
         if (hMutex) CloseHandle(hMutex);
         return 0;
