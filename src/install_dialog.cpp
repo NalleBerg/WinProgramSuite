@@ -1,6 +1,7 @@
 #include "install_dialog.h"
 #include <commctrl.h>
 #include <shellapi.h>
+#include <richedit.h>
 #include <thread>
 #include <regex>
 #include <sstream>
@@ -12,6 +13,8 @@
 static int g_animFrame = 0;
 static HWND g_hInstallAnim = NULL;
 static std::wstring g_doneButtonText = L"Done!";
+static bool g_inImportantBlock = false;  // Track if we're inside a multi-line important message
+static bool g_skipNextDelimiter = false;  // Track if next delimiter should be skipped
 
 // Animation subclass procedure (draws moving dot overlay on progress bar)
 static LRESULT CALLBACK AnimSubclassProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR, DWORD_PTR) {
@@ -82,6 +85,90 @@ static std::wstring Utf8ToWide(const std::string& utf8) {
     return wide;
 }
 
+// Helper to append formatted text to RichEdit control
+static void AppendFormattedText(HWND hRichEdit, const std::wstring& text, bool isBold, COLORREF color) {
+    // Move to end
+    int len = GetWindowTextLengthW(hRichEdit);
+    SendMessageW(hRichEdit, EM_SETSEL, len, len);
+    
+    // Set character format
+    CHARFORMAT2W cf = {};
+    cf.cbSize = sizeof(CHARFORMAT2W);
+    cf.dwMask = CFM_COLOR | CFM_BOLD;
+    cf.crTextColor = color;
+    cf.dwEffects = isBold ? CFE_BOLD : 0;
+    SendMessageW(hRichEdit, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+    
+    // Insert text
+    SendMessageW(hRichEdit, EM_REPLACESEL, FALSE, (LPARAM)text.c_str());
+    SendMessageW(hRichEdit, EM_SCROLLCARET, 0, 0);
+}
+
+// Helper: Check if a line contains important keywords
+static bool HasImportantKeywords(const std::string& line) {
+    std::string lower = line;
+    for (auto& c : lower) c = tolower(c);
+    
+    return (lower.find("error") != std::string::npos ||
+            lower.find("failed") != std::string::npos ||
+            lower.find("warning") != std::string::npos ||
+            lower.find("no applicable upgrade") != std::string::npos ||
+            lower.find("successfully installed") != std::string::npos ||
+            lower.find("installation complete") != std::string::npos ||
+            lower.find("===") != std::string::npos ||
+            (lower.find("package") != std::string::npos && lower.find("processed") != std::string::npos));
+}
+
+// Helper: Check if line is only asterisks (block delimiter)
+static bool IsAsteriskDelimiter(const std::string& line) {
+    std::string trimmed = line;
+    while (!trimmed.empty() && (trimmed[0] == ' ' || trimmed[0] == '\t')) trimmed.erase(0, 1);
+    while (!trimmed.empty() && (trimmed.back() == ' ' || trimmed.back() == '\t' || trimmed.back() == '\r' || trimmed.back() == '\n')) trimmed.pop_back();
+    
+    // Check if line is primarily asterisks (at least 4 asterisks and mostly asterisks)
+    if (trimmed.empty() || trimmed.length() < 4) return false;
+    
+    int asteriskCount = 0;
+    for (char c : trimmed) {
+        if (c == '*') asteriskCount++;
+    }
+    
+    // If more than 50% asterisks and has at least 4, consider it a delimiter
+    return asteriskCount >= 4 && (asteriskCount * 2 >= (int)trimmed.length());
+}
+
+// Check if line should be displayed in bold
+// Returns: 0 = don't show, 1 = gray, 2 = bold
+static int GetLineFormatting(const std::string& line, bool& inImportantBlock, bool& skipNextDelimiter) {
+    bool isDelimiter = IsAsteriskDelimiter(line);
+    bool hasKeywords = HasImportantKeywords(line);
+    
+    // If this line has important keywords, start an important block
+    if (hasKeywords && !isDelimiter) {
+        inImportantBlock = true;
+        return 2;  // Bold
+    }
+    
+    // Handle asterisk delimiters - hide them but toggle block state
+    if (isDelimiter) {
+        if (skipNextDelimiter) {
+            skipNextDelimiter = false;
+            return 0;  // Don't show
+        }
+        
+        // Toggle block state but don't display the delimiter
+        inImportantBlock = !inImportantBlock;
+        return 0;  // Don't show asterisks
+    }
+    
+    // Regular line - show based on block state
+    if (inImportantBlock) {
+        return 2;  // Bold (we're inside an important block)
+    }
+    
+    return 1;  // Gray (normal output)
+}
+
 // Dialog window procedure
 static LRESULT CALLBACK InstallDlgProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     static HWND hProg = NULL;
@@ -132,14 +219,21 @@ static LRESULT CALLBACK InstallDlgProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPAR
         SetWindowSubclass(hAnim, AnimSubclassProc, 0, 0);
         SetTimer(hAnim, 0xBEEF, 1, NULL); // 1ms refresh rate
         
-        // Output edit (larger area)
-        hOut = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", NULL, 
-            WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_READONLY | WS_VSCROLL | ES_AUTOVSCROLL,
+        // Output edit (larger area) - using RichEdit for selective formatting
+        LoadLibraryW(L"Riched20.dll");
+        hOut = CreateWindowExW(WS_EX_CLIENTEDGE, L"RichEdit20W", NULL, 
+            WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_READONLY | WS_VSCROLL | ES_AUTOVSCROLL | ES_WANTRETURN,
             20, 110, W-40, H-190, hwnd, NULL, hInst, NULL);
+        
+        // Enable word wrap
+        SendMessageW(hOut, EM_SETTARGETDEVICE, 0, 0);
+        
+        // Set default font
         HFONT hEditFont = CreateFontW(-13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
             FIXED_PITCH | FF_MODERN, L"Consolas");
         SendMessageW(hOut, WM_SETFONT, (WPARAM)hEditFont, TRUE);
+        SendMessageW(hOut, EM_SETBKGNDCOLOR, 0, (LPARAM)GetSysColor(COLOR_WINDOW));
         
         // Done button (centered, disabled initially)
         hDone = CreateWindowExW(0, L"Button", g_doneButtonText.c_str(), WS_CHILD | WS_VISIBLE | WS_DISABLED | BS_PUSHBUTTON, 
@@ -250,6 +344,30 @@ static bool ShouldDisplayLine(const std::string& line) {
     
     if (trimmed.empty()) return false;
     
+    // Skip PowerShell transcript messages (header, footer, and metadata)
+    if (trimmed.find("Transcript started") != std::string::npos || 
+        trimmed.find("Transcript stopped") != std::string::npos ||
+        trimmed.find("output file is") != std::string::npos ||
+        trimmed.find("Windows PowerShell transcript") != std::string::npos ||
+        trimmed.find("Start time:") == 0 ||
+        trimmed.find("End time:") == 0 ||
+        trimmed.find("Username:") == 0 ||
+        trimmed.find("RunAs User:") == 0 ||
+        trimmed.find("Configuration Name:") == 0 ||
+        trimmed.find("Machine:") == 0 ||
+        trimmed.find("Host Application:") == 0 ||
+        trimmed.find("Process ID:") == 0 ||
+        trimmed.find("PSVersion:") == 0 ||
+        trimmed.find("PSEdition:") == 0 ||
+        trimmed.find("PSCompatibleVersions:") == 0 ||
+        trimmed.find("BuildVersion:") == 0 ||
+        trimmed.find("CLRVersion:") == 0 ||
+        trimmed.find("WSManStackVersion:") == 0 ||
+        trimmed.find("PSRemotingProtocolVersion:") == 0 ||
+        trimmed.find("SerializationVersion:") == 0) {
+        return false;
+    }
+    
     // Skip download progress lines (we handle them separately)
     if (trimmed.find("Downloading") == 0 && trimmed.find("MB") != std::string::npos) {
         return false;
@@ -275,6 +393,10 @@ bool ShowInstallDialog(HWND hParent, const std::vector<std::string>& packageIds,
     
     // Store done button text in static variable for window procedure
     g_doneButtonText = doneButtonText;
+    
+    // Reset important block state for new installation
+    g_inImportantBlock = false;
+    g_skipNextDelimiter = false;
     
     // Register dialog class
     const wchar_t CLASS_NAME[] = L"WinUpdateInstallDialog";
@@ -322,7 +444,7 @@ bool ShowInstallDialog(HWND hParent, const std::vector<std::string>& packageIds,
         
         if (wcscmp(className, L"msctls_progress32") == 0) {
             *handles->hProg = hChild;
-        } else if (wcscmp(className, L"Edit") == 0) {
+        } else if (_wcsicmp(className, L"Edit") == 0 || _wcsicmp(className, L"RichEdit20W") == 0) {  // Support both Edit and RichEdit
             *handles->hOut = hChild;
         } else if (wcscmp(className, L"Static") == 0) {
             RECT rc;
@@ -360,18 +482,19 @@ bool ShowInstallDialog(HWND hParent, const std::vector<std::string>& packageIds,
         ShowWindow(hAnim, SW_SHOW);
         
         // Build PowerShell script that installs each package sequentially
-        std::wstring script = L"";
+        std::wstring script = L"Start-Transcript -Path '" + outputFile + L"' -Append; ";
         for (size_t i = 0; i < packageIds.size(); i++) {
             if (i > 0) {
-                script += L"; Write-Output ''; Write-Output '========================================'; ";
-                script += L"Write-Output 'Package " + std::to_wstring(i + 1) + L" of " + std::to_wstring(packageIds.size()) + L"'; ";
-                script += L"Write-Output '========================================'; Write-Output ''; ";
+                script += L"Write-Host ''; Write-Host '========================================'; ";
+                script += L"Write-Host 'Package " + std::to_wstring(i + 1) + L" of " + std::to_wstring(packageIds.size()) + L"'; ";
+                script += L"Write-Host '========================================'; Write-Host ''; ";
             }
-            script += L"winget upgrade --id '" + Utf8ToWide(packageIds[i]) + L"' --accept-package-agreements --accept-source-agreements";
+            script += L"winget upgrade --id '" + Utf8ToWide(packageIds[i]) + L"' --accept-package-agreements --accept-source-agreements; ";
         }
+        script += L"Stop-Transcript";
         
-        // Build PowerShell command with output redirection and force flush
-        std::wstring fullCmd = L"-NoProfile -ExecutionPolicy Bypass -Command \"& {" + script + L"} *>&1 | Tee-Object -FilePath '" + outputFile + L"'\"";
+        // Build PowerShell command with transcript logging for real-time output
+        std::wstring fullCmd = L"-NoProfile -ExecutionPolicy Bypass -Command \"" + script + L"\"";
         
         // Run PowerShell elevated with UAC (single prompt for all packages)
         SHELLEXECUTEINFOW sei{};
@@ -414,15 +537,29 @@ bool ShowInstallDialog(HWND hParent, const std::vector<std::string>& packageIds,
                     std::istringstream iss(newContent);
                     std::string line;
                     while (std::getline(iss, line)) {
+                        // Remove any trailing \r that might remain
+                        if (!line.empty() && line.back() == '\r') {
+                            line.pop_back();
+                        }
+                        
                         ProcessWingetOutput(line, hwnd, hProg, hAnim, hStatus, currentPhase, currentPackage);
                         
-                        // Append to output window
+                        // Append to output window with formatting
                         if (ShouldDisplayLine(line)) {
-                            std::wstring wline = Utf8ToWide(line) + L"\r\n";
-                            int len = GetWindowTextLengthW(hOut);
-                            SendMessageW(hOut, EM_SETSEL, len, len);
-                            SendMessageW(hOut, EM_REPLACESEL, FALSE, (LPARAM)wline.c_str());
-                            SendMessageW(hOut, EM_SCROLLCARET, 0, 0);
+                            int formatting = GetLineFormatting(line, g_inImportantBlock, g_skipNextDelimiter);
+                            if (formatting > 0) {  // 1 = gray, 2 = bold
+                                std::wstring wline = Utf8ToWide(line) + L"\r\n";
+                                bool isBold = (formatting == 2);
+                                COLORREF color = isBold ? RGB(0, 0, 0) : RGB(128, 128, 128);
+                                AppendFormattedText(hOut, wline, isBold, color);
+                                
+                                // Add extra spacing after "processed" line (end of package)
+                                std::string lower = line;
+                                for (auto& c : lower) c = tolower(c);
+                                if (lower.find("processed") != std::string::npos) {
+                                    AppendFormattedText(hOut, L"\r\n\r\n", false, RGB(128, 128, 128));
+                                }
+                            }
                         }
                     }
                 }
@@ -439,10 +576,32 @@ bool ShowInstallDialog(HWND hParent, const std::vector<std::string>& packageIds,
             finalFile.seekg(lastPos);
             std::string remaining((std::istreambuf_iterator<char>(finalFile)), std::istreambuf_iterator<char>());
             if (!remaining.empty()) {
-                std::wstring wremaining = Utf8ToWide(remaining);
-                int len = GetWindowTextLengthW(hOut);
-                SendMessageW(hOut, EM_SETSEL, len, len);
-                SendMessageW(hOut, EM_REPLACESEL, FALSE, (LPARAM)wremaining.c_str());
+                // Process remaining lines with formatting
+                std::istringstream iss(remaining);
+                std::string line;
+                while (std::getline(iss, line)) {
+                    // Remove any trailing \r
+                    if (!line.empty() && line.back() == '\r') {
+                        line.pop_back();
+                    }
+                    
+                    if (ShouldDisplayLine(line)) {
+                        int formatting = GetLineFormatting(line, g_inImportantBlock, g_skipNextDelimiter);
+                        if (formatting > 0) {
+                            std::wstring wline = Utf8ToWide(line) + L"\r\n";
+                            bool isBold = (formatting == 2);
+                            COLORREF color = isBold ? RGB(0, 0, 0) : RGB(128, 128, 128);
+                            AppendFormattedText(hOut, wline, isBold, color);
+                            
+                            // Add extra spacing after "processed" line
+                            std::string lower = line;
+                            for (auto& c : lower) c = tolower(c);
+                            if (lower.find("processed") != std::string::npos) {
+                                AppendFormattedText(hOut, L"\r\n\r\n", false, RGB(128, 128, 128));
+                            }
+                        }
+                    }
+                }
             }
             finalFile.close();
         }
@@ -455,13 +614,10 @@ bool ShowInstallDialog(HWND hParent, const std::vector<std::string>& packageIds,
         SetWindowTextW(hStatus, L"Installation complete!");
         EnableWindow(hDone, TRUE);
         
-        // Append completion message
+        // Append completion message in bold
         std::wstring completionMsg = L"\r\n\r\n=== Installation Complete ===\r\n";
         completionMsg += std::to_wstring(packageIds.size()) + L" package(s) processed.\r\n";
-        int curLen = GetWindowTextLengthW(hOut);
-        SendMessageW(hOut, EM_SETSEL, curLen, curLen);
-        SendMessageW(hOut, EM_REPLACESEL, FALSE, (LPARAM)completionMsg.c_str());
-        SendMessageW(hOut, EM_SCROLLCARET, 0, 0);
+        AppendFormattedText(hOut, completionMsg, true, RGB(0, 0, 0));
     }).detach();
     
     // Modal message loop
