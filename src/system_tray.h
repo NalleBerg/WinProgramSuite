@@ -65,6 +65,7 @@ private:
     UINT_PTR m_tooltipTimerId;
     SYSTEMTIME m_nextScanTime;
     int m_pollingIntervalHours;
+    std::wstring m_lastStatusLine;  // Store last status to persist between timer updates
     
     // Calculate next scan time
     void CalculateNextScanTime();

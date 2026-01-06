@@ -3078,8 +3078,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR pCmdLine, int nCmdShow
         g_systemTray->StartScanTimer(pollingInterval);
         g_systemTray->StartTooltipTimer();
         
-        // Set initial tooltip (before first scan)
-        g_systemTray->UpdateNextScanTime();
+        // Set initial tooltip with "no updates" status (before first scan)
+        g_systemTray->UpdateNextScanTime(t("tray_no_updates"));
         
         // Trigger immediate scan on startup (will run silently in background)
         g_systemTray->TriggerScan();

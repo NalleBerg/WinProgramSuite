@@ -211,12 +211,17 @@ void SystemTray::CalculateNextScanTime() {
 }
 
 void SystemTray::UpdateNextScanTime(const std::wstring& statusLine) {
+    // If a new status line is provided, store it; otherwise use the stored one
+    if (!statusLine.empty()) {
+        m_lastStatusLine = statusLine;
+    }
+    
     std::wstring timeStr = GetNextScanTimeString();
     
-    // Build tooltip with optional second line for status
+    // Build tooltip with second line from stored status
     std::wstring tooltip = L"WinUpdate - Next scan: " + timeStr;
-    if (!statusLine.empty()) {
-        tooltip += L"\n" + statusLine;
+    if (!m_lastStatusLine.empty()) {
+        tooltip += L"\n" + m_lastStatusLine;
     }
     
     // Debug logging
