@@ -6,8 +6,17 @@
 #include <regex>
 #include <sstream>
 #include <fstream>
+#include <functional>
 
 #pragma comment(lib, "comctl32.lib")
+
+// Translation function pointer
+static std::function<std::wstring(const char*)> g_translate = nullptr;
+
+static std::wstring t(const char* key) {
+    if (g_translate) return g_translate(key);
+    return std::wstring(key, key + strlen(key));
+}
 
 // Animation state
 static int g_animFrame = 0;
@@ -187,7 +196,7 @@ static LRESULT CALLBACK InstallDlgProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPAR
         const int W = 640, H = 480;
         
         // Overall progress label (centered)
-        hOverallStatus = CreateWindowExW(0, L"Static", L"Installing 0 of 0", WS_CHILD | WS_VISIBLE | SS_CENTER, 
+        hOverallStatus = CreateWindowExW(0, L"Static", t("install_preparing").c_str(), WS_CHILD | WS_VISIBLE | SS_CENTER, 
             20, 20, W-40, 24, hwnd, (HMENU)1002, hInst, NULL);
         HFONT hFontBold = CreateFontW(-14, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
@@ -198,7 +207,7 @@ static LRESULT CALLBACK InstallDlgProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPAR
         HFONT hFont = CreateFontW(-13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
             DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
-        hStatus = CreateWindowExW(0, L"Static", L"Preparing...", WS_CHILD | WS_VISIBLE | SS_LEFT, 
+        hStatus = CreateWindowExW(0, L"Static", t("install_preparing").c_str(), WS_CHILD | WS_VISIBLE | SS_LEFT,
             24, 48, W-48, 20, hwnd, NULL, hInst, NULL);
         SendMessageW(hStatus, WM_SETFONT, (WPARAM)hFont, TRUE);
         
@@ -312,7 +321,10 @@ static void ProcessWingetOutput(const std::string& line, HWND hwnd, HWND hProg, 
             // Reset animation to start position
             g_animFrame = 0;
             
-            std::wstring statusText = L"Installing " + Utf8ToWide(currentPackage);
+            wchar_t pkgBuf[512];
+            std::wstring pkgWide = Utf8ToWide(currentPackage);
+            swprintf(pkgBuf, 512, t("installing_package").c_str(), pkgWide.c_str());
+            std::wstring statusText = pkgBuf;
             SetWindowTextW(hStatus, statusText.c_str());
         }
     }
@@ -388,10 +400,13 @@ static bool ShouldDisplayLine(const std::string& line) {
     return true;
 }
 
-bool ShowInstallDialog(HWND hParent, const std::vector<std::string>& packageIds, const std::wstring& doneButtonText) {
+bool ShowInstallDialog(HWND hParent, const std::vector<std::string>& packageIds, 
+                      const std::wstring& doneButtonText,
+                      std::function<std::wstring(const char*)> translateFunc) {
     if (packageIds.empty()) return false;
     
-    // Store done button text in static variable for window procedure
+    // Store translate function and done button text
+    g_translate = translateFunc;
     g_doneButtonText = doneButtonText;
     
     // Reset important block state for new installation
@@ -411,7 +426,7 @@ bool ShowInstallDialog(HWND hParent, const std::vector<std::string>& packageIds,
     RegisterClassW(&wc);
     
     // Create modal dialog
-    HWND hwnd = CreateWindowExW(0, CLASS_NAME, L"Installing Updates",
+    HWND hwnd = CreateWindowExW(0, CLASS_NAME, t("install_dialog_title").c_str(),
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
         CW_USEDEFAULT, CW_USEDEFAULT, 640, 480,
         hParent, NULL, GetModuleHandleW(NULL), NULL);
@@ -464,7 +479,9 @@ bool ShowInstallDialog(HWND hParent, const std::vector<std::string>& packageIds,
     UpdateWindow(hwnd);
     
     // Update overall status with correct count
-    std::wstring initialStatus = L"Installing 0 of " + std::to_wstring(packageIds.size());
+    wchar_t initialBuf[256];
+    swprintf(initialBuf, 256, t("install_progress").c_str(), 0, (int)packageIds.size());
+    std::wstring initialStatus = initialBuf;
     SendMessageW(hOverallStatus, WM_SETTEXT, 0, (LPARAM)initialStatus.c_str());
     
     // Generate unique temp file name for output only (no batch file)
@@ -475,7 +492,9 @@ bool ShowInstallDialog(HWND hParent, const std::vector<std::string>& packageIds,
     // Start winget in background thread with UAC elevation
     std::thread([hwnd, hOut, hProg, hStatus, hDone, hAnim, hOverallStatus, packageIds, outputFile]() {
         // Update status to show starting
-        std::wstring startStatus = L"Installing 1 of " + std::to_wstring(packageIds.size());
+        wchar_t startBuf[256];
+        swprintf(startBuf, 256, t("install_progress").c_str(), 1, (int)packageIds.size());
+        std::wstring startStatus = startBuf;
         SendMessageW(hOverallStatus, WM_SETTEXT, 0, (LPARAM)startStatus.c_str());
         
         // Show animation from the start

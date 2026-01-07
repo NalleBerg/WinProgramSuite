@@ -3,11 +3,14 @@ app_window_title=WinUpdate - winget GUI updater
 app_title=WinUpdate
 list_last_updated_prefix=List last updated:
 select_all=Select all
-upgrade_now=Upgrade now
+upgrade_now=Update now
 refresh=Refresh
 package_col=Package
 id_col=Id
-loading_title=Loading, please
+current_col=Installed
+available_col=Available
+skip_col=Skip
+unskip_btn=Unskipunskip=Unskiploading_title=Loading please wait...
 loading_desc=Querying winget
 your_system_updated=Your system is updated!
 no_packages_selected=Please select at least one package to install.
@@ -15,7 +18,86 @@ install_done=Done!
 msg_error_elevate=Failed to launch elevated process.
 config_btn=Settings
 about_btn=About
+config_dialog_title=Settings
+config_mode_manual=Manual
+config_mode_startup=Scan at Windows startup
+config_mode_systray=Run in the system tray
+config_polling_startup=At startup
+config_polling_hours=Every %d hours
+config_status_manual=Manual mode: program only runs when you start it.
+config_status_startup_only=Startup mode: scan at Windows startup.
+config_status_systray_startup=System tray mode: scan at startup, then at intervals.
+config_status_systray_polling=System tray mode: scan every %d hours.
+config_btn_add_to_tray=Add to systray now
+config_btn_use=Use
+config_btn_ok=OK
+config_btn_cancel=Cancel
+install_dialog_title=Installing Updates
+install_preparing=Preparing...
+install_of=of
+install_progress=Installing %d of %d
+installing_package=Installing %s
+lang_changed_en=Language changed to English (UK)
+lang_changed_nb=Language changed to Norwegian (Bokmål)
+lang_changed_sv=Language changed to Swedish
 tray_scanning=Scanning...
 tray_no_updates=No updates available
 tray_one_update=1 update available
 tray_updates_available=updates available
+tray_next_scan=Next scan:
+tray_balloon_updates_title=Updates Available
+tray_balloon_one_update=1 update found. Click to view.
+tray_balloon_multiple_updates=%d updates found. Click to view.
+tray_balloon_no_updates=You are updated!
+about_title=About WinUpdate
+about_subtitle=Win as in Victory!
+about_published=Published:
+about_version=Version:
+about_intro=WinUpdate is an application that ensures you stay up to date. It supports <xx xxx> applications from numerous developers.
+about_modes_intro=The program can run in three modes:
+about_mode1_title=Manual
+about_mode1_desc=You open the program, and winget (built into Windows 10 and 11), which the program uses, looks up which updates there are for the programs you have installed on your machine. You choose which ones you want to install, or click "Select all" to install everything. Then you click "Update now" and the programs you have selected will be updated to the latest version.
+about_mode2_title=Scan at Windows startup
+about_mode2_desc=Every time you start Windows, it performs a scan in the background, and opens the program if any updates are found. Otherwise, the program also works as manual mode.
+about_mode3_title=Run in the system tray
+about_mode3_desc=The program starts at startup and scans for updates, before it places itself in the system tray (bottom right, by the clock), where it scans for updates after the time interval you have selected in "Settings". When it finds updates, it will notify you through Windows' notification system. You can then click on the icon in the system tray to open the program and view/install the update(s).
+about_no_ms_account=You do not need to be logged into your Microsoft account to use the program.
+about_conclusion=From now on you can be more up to date on your PC than you ever have been before!
+about_license_info=License: GPLv2 — view license by clicking the button at the bottom left
+about_description=WinUpdate is an application that ensures you stay up to date. It supports over 11,000 packages applications from numerous developers.
+
+about_description2=The program can run in three modes:
+
+1: Manual
+You open the program, and winget (built into Windows 10 and 11), which the program uses, searches for available updates to the programs installed on your machine. You choose which ones to install, or click "Select all" to install everything. Then you click "Upgrade now" and your selected programs are updated to the latest version.
+
+2: Scan at Windows startup
+Every time you start Windows, it performs a background scan and opens the program if any updates are found. Otherwise, the program works the same as in manual mode.
+
+3: Run in the system tray
+The program starts at boot and scans for updates, then places itself in the system tray (bottom right, by the clock), where it scans for updates at intervals you choose in "Settings". When it finds updates, it notifies you through Windows' notification system. You can then click the icon in the system tray to open the program and view/install the update(s).
+
+You don't need to be logged into your Microsoft account to use the program.
+
+From now on, you can be more up to date on your PC than you've ever been before!
+about_supports=
+about_packages=
+about_author=Author:
+about_copyleft=Copyleft
+about_license=License:
+about_license_name=GNU General Public License v2.0
+about_license_file=see LICENSE.md included with this distribution.
+about_summary=Summary:
+about_summary_text=This program is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License version 2 as published by the Free Software Foundation. This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+about_attribution=If you mention a newer version or fork, please attribute the author as requested.
+about_view_license=View License
+about_close=Close
+tray_menu_scan=Scan now
+tray_menu_open=Open main window
+tray_menu_exit=Exit
+skip_confirm_question=Skip this update of <appname>?
+skip_confirm_body=Version <available> will not show in the update list anymore.\nThe version after <available> will show, however.\nYou are skipping only that version.
+btn_do_it=Do it!
+btn_cancel=Cancel
+skip_tooltip=Skip this update of <appname>?
+unskip_tooltip=Click the row and press Unskip to execute it

@@ -1,5 +1,6 @@
 #include "system_tray.h"
 #include "scan_runner.h"
+#include "Config.h"
 #include <shellapi.h>
 #include <sstream>
 #include <iomanip>
@@ -20,6 +21,7 @@
 // External references
 extern HWND g_hMainWindow;
 extern std::atomic<bool> g_refresh_in_progress;
+extern std::wstring t(const char *key);
 
 #define WM_REFRESH_ASYNC (WM_APP + 1)
 
@@ -137,11 +139,15 @@ void SystemTray::ShowContextMenu(HWND hwnd) {
     HMENU hMenu = CreatePopupMenu();
     if (!hMenu) return;
     
-    // Add menu items with Unicode text
-    AppendMenuW(hMenu, MF_STRING, IDM_SCAN_NOW, L"⚡ Scan now!");
-    AppendMenuW(hMenu, MF_STRING, IDM_OPEN_WINDOW, L"🪟 Open main window");
+    // Add menu items with i18n support
+    std::wstring scanText = L"⚡ " + t("tray_menu_scan");
+    std::wstring openText = L"🪟 " + t("tray_menu_open");
+    std::wstring exitText = L"❌ " + t("tray_menu_exit");
+    
+    AppendMenuW(hMenu, MF_STRING, IDM_SCAN_NOW, scanText.c_str());
+    AppendMenuW(hMenu, MF_STRING, IDM_OPEN_WINDOW, openText.c_str());
     AppendMenuW(hMenu, MF_SEPARATOR, 0, NULL);
-    AppendMenuW(hMenu, MF_STRING, IDM_EXIT, L"❌ Exit");
+    AppendMenuW(hMenu, MF_STRING, IDM_EXIT, exitText.c_str());
     
     // Required for menu to work properly
     SetForegroundWindow(hwnd);
@@ -219,7 +225,7 @@ void SystemTray::UpdateNextScanTime(const std::wstring& statusLine) {
     std::wstring timeStr = GetNextScanTimeString();
     
     // Build tooltip with second line from stored status
-    std::wstring tooltip = L"WinUpdate - Next scan: " + timeStr;
+    std::wstring tooltip = L"WinUpdate - " + t("tray_next_scan") + L" " + timeStr;
     if (!m_lastStatusLine.empty()) {
         tooltip += L"\n" + m_lastStatusLine;
     }

@@ -21,7 +21,7 @@ static std::string ReadFileToString(const std::string &path) {
 }
 
 static std::string LoadI18nValue(const std::string &locale, const std::string &key) {
-    std::string fn = std::string("i18n/") + locale + ".txt";
+    std::string fn = std::string("locale/") + locale + ".txt";
     std::string txt = ReadFileToString(fn);
     if (txt.empty()) return std::string();
     std::istringstream iss(txt);
@@ -316,18 +316,17 @@ static LRESULT CALLBACK Unskip_ListSubclassProc(HWND hwnd, UINT uMsg, WPARAM wPa
 
 bool ShowUnskipDialog(HWND parent) {
     std::string locale = "en_GB";
-    // try to read locale from settings file similar to other code
+    // Load locale from APPDATA wup_settings.ini
     char buf[MAX_PATH]; DWORD len = GetEnvironmentVariableA("APPDATA", buf, MAX_PATH);
     std::string settingsIni;
     if (len > 0 && len < MAX_PATH) settingsIni = std::string(buf) + "\\WinUpdate\\wup_settings.ini";
-    // attempt to read `[language]` section
     std::ifstream ifs(settingsIni, std::ios::binary);
     if (ifs) {
         std::string line; bool inLang = false;
         auto trim = [](std::string &s){ size_t a = s.find_first_not_of(" \t\r\n"); if (a==std::string::npos) { s.clear(); return; } size_t b = s.find_last_not_of(" \t\r\n"); s = s.substr(a, b-a+1); };
         while (std::getline(ifs, line)) {
             trim(line); if (line.empty()) continue; if (line.front() == '[') { inLang = (line=="[language]"); continue; }
-            if (inLang) { locale = line; break; }
+            if (inLang) { locale = line; break; } // Return full locale code (en_GB, nb_NO, sv_SE)
         }
     }
 

@@ -81,16 +81,8 @@ static std::string GetSettingsIniPath() {
 static std::string LoadLocaleSetting() {
     std::string ini = GetSettingsIniPath();
     std::ifstream ifs(ini, std::ios::binary);
-    if (!ifs) {
-        // create default INI with required sections
-        std::ofstream ofs(ini, std::ios::binary);
-        if (ofs) {
-            ofs << "[language]\n";
-            ofs << "en_GB\n\n";
-            ofs << "[skipped]\n";
-        }
-        return std::string("en_GB");
-    }
+    if (!ifs) return std::string("en_GB");
+    
     auto trim = [](std::string &s){ size_t a = s.find_first_not_of(" \t\r\n"); if (a==std::string::npos) { s.clear(); return; } size_t b = s.find_last_not_of(" \t\r\n"); s = s.substr(a, b-a+1); };
     std::string line;
     bool inLang = false;
@@ -102,13 +94,13 @@ static std::string LoadLocaleSetting() {
             inLang = (line == "[language]");
             continue;
         }
-        if (inLang) return line;
+        if (inLang) return line; // Return full locale code (en_GB, nb_NO, sv_SE)
     }
-    return std::string();
+    return std::string("en_GB");
 }
 
 static std::string LoadI18nValue(const std::string &locale, const std::string &key) {
-    std::string fn = std::string("i18n/") + locale + ".txt";
+    std::string fn = std::string("locale/") + locale + ".txt";
     std::string txt = ReadFileToString(fn);
     if (txt.empty()) return std::string();
     std::istringstream iss(txt);

@@ -498,7 +498,7 @@ static void LoadLocaleFromFile(const std::string &locale) {
     }
 }
 
-static std::wstring t(const char *key) {
+std::wstring t(const char *key) {
     InitDefaultTranslations();
     std::string k(key);
     auto it = g_i18n.find(k);
@@ -507,39 +507,102 @@ static std::wstring t(const char *key) {
     return Utf8ToWide(it->second);
 }
 
-// Settings persistence: simple UTF-8 key=value in wup_settings.txt
+// Settings persistence: save to %APPDATA%\WinUpdate\wup_settings.ini
 static bool SaveLocaleSetting(const std::string &locale) {
     try {
-        std::string fn = "wup_settings.txt";
-        std::ofstream ofs(fn, std::ios::binary | std::ios::trunc);
+        char buf[MAX_PATH];
+        DWORD len = GetEnvironmentVariableA("APPDATA", buf, MAX_PATH);
+        if (len == 0 || len >= MAX_PATH) return false;
+        std::string path = std::string(buf) + "\\WinUpdate";
+        // ensure directory exists
+        CreateDirectoryA(path.c_str(), NULL);
+        std::string ini = path + "\\wup_settings.ini";
+        
+        // Read existing content to preserve other sections
+        std::vector<std::string> lines;
+        std::ifstream ifs(ini, std::ios::binary);
+        if (ifs) {
+            std::string ln;
+            while (std::getline(ifs, ln)) lines.push_back(ln);
+            ifs.close();
+        }
+        
+        // Update [language] section
+        bool foundLangSection = false;
+        bool updatedLang = false;
+        std::vector<std::string> newLines;
+        for (size_t i = 0; i < lines.size(); i++) {
+            std::string ln = lines[i];
+            auto trim = [](std::string s){ size_t a = s.find_first_not_of(" \t\r\n"); if (a==std::string::npos) return std::string(); size_t b = s.find_last_not_of(" \t\r\n"); return s.substr(a, b-a+1); };
+            std::string trimmed = trim(ln);
+            if (trimmed == "[language]") {
+                foundLangSection = true;
+                newLines.push_back(ln);
+                // Replace next non-empty line in this section with our locale
+                while (i + 1 < lines.size()) {
+                    std::string next = lines[i+1];
+                    std::string nextTrim = trim(next);
+                    if (nextTrim.empty() || nextTrim[0] == '#' || nextTrim[0] == ';') {
+                        newLines.push_back(next);
+                        i++;
+                    } else if (nextTrim[0] == '[') {
+                        // Next section, insert our locale before it
+                        newLines.push_back(locale);
+                        updatedLang = true;
+                        break;
+                    } else {
+                        // This is the language line, replace it
+                        newLines.push_back(locale);
+                        updatedLang = true;
+                        i++;
+                        break;
+                    }
+                }
+                if (!updatedLang) {
+                    newLines.push_back(locale);
+                    updatedLang = true;
+                }
+            } else {
+                newLines.push_back(ln);
+            }
+        }
+        
+        // If [language] section not found, add it at the beginning
+        if (!foundLangSection) {
+            newLines.insert(newLines.begin(), locale);
+            newLines.insert(newLines.begin(), "[language]");
+        }
+        
+        // Write back
+        std::ofstream ofs(ini, std::ios::binary | std::ios::trunc);
         if (!ofs) return false;
-        ofs << "language=" << locale << "\n";
+        for (const auto &ln : newLines) ofs << ln << "\n";
         return true;
     } catch(...) { return false; }
 }
 
 static std::string LoadLocaleSetting() {
     try {
-        std::string fn = "wup_settings.txt";
-        std::ifstream ifs(fn, std::ios::binary);
+        char buf[MAX_PATH];
+        DWORD len = GetEnvironmentVariableA("APPDATA", buf, MAX_PATH);
+        if (len == 0 || len >= MAX_PATH) return std::string();
+        std::string ini = std::string(buf) + "\\WinUpdate\\wup_settings.ini";
+        
+        std::ifstream ifs(ini, std::ios::binary);
         if (!ifs) return std::string();
-        std::ostringstream ss; ss << ifs.rdbuf();
-        std::string txt = ss.str();
-        std::istringstream iss(txt);
+        
+        auto trim = [](std::string &s){ while(!s.empty() && isspace((unsigned char)s.front())) s.erase(s.begin()); while(!s.empty() && isspace((unsigned char)s.back())) s.pop_back(); };
         std::string ln;
-        while (std::getline(iss, ln)) {
-            // trim
-            auto ltrim = [](std::string &s){ while(!s.empty() && isspace((unsigned char)s.front())) s.erase(s.begin()); };
-            auto rtrim = [](std::string &s){ while(!s.empty() && isspace((unsigned char)s.back())) s.pop_back(); };
-            ltrim(ln); rtrim(ln);
+        bool inLang = false;
+        while (std::getline(ifs, ln)) {
+            trim(ln);
             if (ln.empty()) continue;
             if (ln[0] == '#' || ln[0] == ';') continue;
-            size_t eq = ln.find('=');
-            if (eq == std::string::npos) continue;
-            std::string key = ln.substr(0, eq);
-            std::string val = ln.substr(eq+1);
-            ltrim(key); rtrim(key); ltrim(val); rtrim(val);
-            if (key == "language" && !val.empty()) return val;
+            if (ln[0] == '[') {
+                inLang = (ln == "[language]");
+                continue;
+            }
+            if (inLang) return ln; // Return full locale code (en_GB, nb_NO, sv_SE)
         }
     } catch(...) {}
     return std::string();
@@ -674,22 +737,22 @@ static LRESULT CALLBACK PopupWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
         int txtX = ix + iconW + padding;
         int txtW = w - txtX - padding;
         int row1Height = iconH + padding; // provide vertical space for icon + text
-        // Title (big)
-        RECT titleRect = { txtX, iy, txtX + txtW, iy + row1Height / 2 };
-        // Description under title within first row
-        RECT descRect = { txtX, iy + row1Height / 2, txtX + txtW, iy + row1Height };
+        // Title centered across full dialog width
+        RECT titleRect = { rc.left + padding, iy, rc.right - padding, iy + row1Height / 2 };
+        // Description centered across full dialog width (not just text area)
+        RECT descRect = { rc.left + padding, iy + row1Height / 2, rc.right - padding, iy + row1Height };
 
         // draw title using existing title font if available (preserves ClearType)
         if (g_hTitleFont) {
             HGDIOBJ oldFont = SelectObject(hdcMem, g_hTitleFont);
             SetTextColor(hdcMem, RGB(0,0,0));
             SetBkMode(hdcMem, TRANSPARENT);
-            DrawTextW(hdcMem, t("loading_title").c_str(), -1, &titleRect, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+            DrawTextW(hdcMem, t("loading_title").c_str(), -1, &titleRect, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
             SelectObject(hdcMem, oldFont);
         } else {
             SetTextColor(hdcMem, RGB(0,0,0));
             SetBkMode(hdcMem, TRANSPARENT);
-            DrawTextW(hdcMem, t("loading_title").c_str(), -1, &titleRect, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+            DrawTextW(hdcMem, t("loading_title").c_str(), -1, &titleRect, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
         }
 
         // draw description smaller
@@ -697,12 +760,12 @@ static LRESULT CALLBACK PopupWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
             HGDIOBJ oldFont = SelectObject(hdcMem, g_hLastUpdatedFont);
             SetTextColor(hdcMem, RGB(64,64,64));
             SetBkMode(hdcMem, TRANSPARENT);
-            DrawTextW(hdcMem, t("loading_desc").c_str(), -1, &descRect, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+            DrawTextW(hdcMem, t("loading_desc").c_str(), -1, &descRect, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
             SelectObject(hdcMem, oldFont);
         } else {
             SetTextColor(hdcMem, RGB(64,64,64));
             SetBkMode(hdcMem, TRANSPARENT);
-            DrawTextW(hdcMem, t("loading_desc").c_str(), -1, &descRect, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+            DrawTextW(hdcMem, t("loading_desc").c_str(), -1, &descRect, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
         }
 
         // Row2: center dots across full width (merged cell)
@@ -1872,11 +1935,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
         // language selection combobox (top-left)
         HWND hComboLang = CreateWindowExW(0, WC_COMBOBOXW, NULL, WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_TABSTOP, 10, 10, 150, 200, hwnd, (HMENU)IDC_COMBO_LANG, NULL, NULL);
         if (hComboLang) {
-            SendMessageW(hComboLang, CB_ADDSTRING, 0, (LPARAM)L"English (en_GB)");
-            SendMessageW(hComboLang, CB_ADDSTRING, 0, (LPARAM)L"Norsk (nb_NO)");
+            SendMessageW(hComboLang, CB_ADDSTRING, 0, (LPARAM)L"English (UK)");
+            SendMessageW(hComboLang, CB_ADDSTRING, 0, (LPARAM)L"Norsk (NB)");
+            SendMessageW(hComboLang, CB_ADDSTRING, 0, (LPARAM)L"Svenska (SE)");
             // select based on g_locale (prefix)
             int sel = 0;
             if (g_locale.rfind("nb_NO",0) == 0) sel = 1;
+            else if (g_locale.rfind("sv_SE",0) == 0) sel = 2;
             SendMessageW(hComboLang, CB_SETCURSEL, sel, 0);
         }
 
@@ -1906,8 +1971,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
         col.fmt = LVCFMT_LEFT;
         col.pszText = (LPWSTR)g_colHeaders[0].c_str();
         ListView_InsertColumn(hList, 0, &col);
-        LVCOLUMNW colCur{}; colCur.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_FMT; colCur.cx = 100; colCur.fmt = LVCFMT_RIGHT; colCur.pszText = (LPWSTR)g_colHeaders[1].c_str(); ListView_InsertColumn(hList, 1, &colCur);
-        LVCOLUMNW colAvail{}; colAvail.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_FMT; colAvail.cx = 100; colAvail.fmt = LVCFMT_RIGHT; colAvail.pszText = (LPWSTR)g_colHeaders[2].c_str(); ListView_InsertColumn(hList, 2, &colAvail);
+        LVCOLUMNW colCur{}; colCur.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_FMT; colCur.cx = 100; colCur.fmt = LVCFMT_LEFT; colCur.pszText = (LPWSTR)g_colHeaders[1].c_str(); ListView_InsertColumn(hList, 1, &colCur);
+        LVCOLUMNW colAvail{}; colAvail.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_FMT; colAvail.cx = 100; colAvail.fmt = LVCFMT_LEFT; colAvail.pszText = (LPWSTR)g_colHeaders[2].c_str(); ListView_InsertColumn(hList, 2, &colAvail);
         LVCOLUMNW colSkip{}; colSkip.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_FMT; colSkip.cx = 80; colSkip.fmt = LVCFMT_CENTER; colSkip.pszText = (LPWSTR)g_colHeaders[3].c_str(); ListView_InsertColumn(hList, 3, &colSkip);
 
         hCheckAll = CreateWindowExW(0, L"Button", t("select_all").c_str(), WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 10, 350, 120, 28, hwnd, (HMENU)IDC_BTN_SELECTALL, NULL, NULL);
@@ -2155,14 +2220,20 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                 
                 if (nonSkippedCount > 0) {
                     // Always show notification when updates are found
-                    std::wstring title = L"Updates Available";
-                    std::wstringstream msg;
-                    msg << nonSkippedCount << L" update" << (nonSkippedCount > 1 ? L"s" : L"") << L" found. Click to view.";
-                    g_systemTray->ShowBalloon(title, msg.str());
+                    std::wstring title = t("tray_balloon_updates_title");
+                    std::wstring msg;
+                    if (nonSkippedCount == 1) {
+                        msg = t("tray_balloon_one_update");
+                    } else {
+                        wchar_t buf[256];
+                        swprintf(buf, 256, t("tray_balloon_multiple_updates").c_str(), nonSkippedCount);
+                        msg = buf;
+                    }
+                    g_systemTray->ShowBalloon(title, msg);
                 } else if (wParam) {
                     // Only show "You are updated!" if this was a manual scan (wParam == 1)
                     // Don't show for automatic periodic scans (would be annoying)
-                    g_systemTray->ShowBalloon(L"WinUpdate", L"You are updated!");
+                    g_systemTray->ShowBalloon(L"WinUpdate", t("tray_balloon_no_updates"));
                 }
             } else if (g_systemTray && g_systemTray->IsActive()) {
                 // Window is visible - just update tooltip, no balloon
@@ -2567,6 +2638,37 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                     if (IsItemNotApplicable(idx)) {
                         lvc->clrText = RGB(160,160,160);
                     }
+                    return CDRF_NOTIFYSUBITEMDRAW | CDRF_NOTIFYPOSTPAINT;
+                }
+                case CDDS_SUBITEM | CDDS_ITEMPREPAINT: {
+                    // Custom draw subitems 1 and 2 (Installed/Available) with right alignment
+                    int idx = (int)lvc->nmcd.dwItemSpec;
+                    int sub = lvc->iSubItem;
+                    if (sub == 1 || sub == 2) {
+                        HWND hListLocal = GetDlgItem(hwnd, IDC_LISTVIEW);
+                        if (hListLocal && IsWindow(hListLocal)) {
+                            RECT tr{};
+                            if (ListView_GetSubItemRect(hListLocal, idx, sub, LVIR_LABEL, &tr)) {
+                                wchar_t buf[256] = {0};
+                                LVITEMW _lvit{};
+                                _lvit.iSubItem = sub;
+                                _lvit.cchTextMax = (int)(sizeof(buf)/sizeof(buf[0]));
+                                _lvit.pszText = buf;
+                                SendMessageW(hListLocal, LVM_GETITEMTEXTW, (WPARAM)idx, (LPARAM)&_lvit);
+                                
+                                // Fill background
+                                FillRect(lvc->nmcd.hdc, &tr, (HBRUSH)(COLOR_WINDOW + 1));
+                                
+                                // Draw text right-aligned
+                                SetTextColor(lvc->nmcd.hdc, lvc->clrText);
+                                SetBkMode(lvc->nmcd.hdc, TRANSPARENT);
+                                SelectObject(lvc->nmcd.hdc, g_hListFont);
+                                DrawTextW(lvc->nmcd.hdc, buf, -1, &tr, DT_RIGHT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
+                                
+                                return CDRF_SKIPDEFAULT;
+                            }
+                        }
+                    }
                     return CDRF_NOTIFYPOSTPAINT | CDRF_DODEFAULT;
                 }
                 case CDDS_ITEMPOSTPAINT: {
@@ -2639,7 +2741,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
             if (toInstall.empty()) {
                 MessageBoxW(hwnd, t("no_packages_selected").c_str(), t("app_title").c_str(), MB_OK | MB_ICONWARNING);
             } else {
-                ShowInstallDialog(hwnd, toInstall, t("install_done"));
+                ShowInstallDialog(hwnd, toInstall, t("install_done"), [](const char* key) { return t(key); });
                 PostMessageW(hwnd, WM_REFRESH_ASYNC, 1, 0);
             }
             break;
@@ -2657,7 +2759,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
             HWND hCombo = GetDlgItem(hwnd, IDC_COMBO_LANG);
                 if (hCombo) {
                 int sel = (int)SendMessageW(hCombo, CB_GETCURSEL, 0, 0);
-                std::string newloc = (sel == 1) ? "nb_NO" : "en_GB";
+                std::string newloc = (sel == 1) ? "nb_NO" : (sel == 2) ? "sv_SE" : "en_GB";
                 g_locale = newloc;
                 LoadLocaleFromFile(g_locale);
                 SaveLocaleSetting(g_locale);
@@ -2686,7 +2788,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                 HWND hBtnAbout = GetDlgItem(hwnd, IDC_BTN_ABOUT);
                 if (hBtnAbout) SetWindowTextW(hBtnAbout, t("about_btn").c_str());
                 // Inform the user about the language change with an info icon
-                MessageBoxW(hwnd, t("lang_changed").c_str(), t("app_title").c_str(), MB_OK | MB_ICONINFORMATION);
+                std::string lang_key = (sel == 0) ? "lang_changed_en" : (sel == 1) ? "lang_changed_nb" : "lang_changed_sv";
+                MessageBoxW(hwnd, t(lang_key.c_str()).c_str(), t("app_title").c_str(), MB_OK | MB_ICONINFORMATION);
             }
             break;
         } else if (id == IDC_BTN_REFRESH) {
@@ -2865,7 +2968,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
             } else {
                 AppendLog("Calling ShowInstallDialog\n");
                 // Show modal install dialog
-                ShowInstallDialog(hwnd, toInstall);
+                ShowInstallDialog(hwnd, toInstall, t("install_done"), [](const char* key) { return t(key); });
                 
                 // After install completes, trigger a refresh
                 PostMessageW(hwnd, WM_REFRESH_ASYNC, 1, 0);

@@ -1,183 +1,353 @@
 #include "About.h"
 #include "ctrlw.h"
-#include <string>
-#include <fstream>
-#include <vector>
-#include <algorithm>
 #include <windows.h>
+#include <richedit.h>
+#include <string>
 #include <sstream>
+#include <shlobj.h>
+#include <gdiplus.h>
+#pragma comment(lib, "gdiplus.lib")
 
-// Set the published timestamp here. Update before publishing releases on the website.
-const wchar_t ABOUT_PUBLISHED[] = L"2026-01-02";
+using namespace Gdiplus;
 
-static std::wstring BuildAboutText()
-{
-    std::wstring eng = L"WinUpdate\r\n";
-    eng += L"(Win as in Victory!)\r\n";
-    eng += L"Published: "; eng += ABOUT_PUBLISHED; eng += L"\r\n\r\n";
-    eng += L"A lightweight Win32 GUI wrapper for Microsoft\'s winget.\r\n";
-    eng += L"Select upgrades, run installs under a single elevation, and review detailed output.\r\n\r\n";
-    eng += L"Author: Nalle Berg\r\n";
-    eng += L"Copyleft 2025\r\n";
-    eng += L"License: MIT License — see LICENSE.md included with this distribution.\r\n\r\n";
-    eng += L"Summary: You are free to use, copy, modify, merge, publish, distribute, sublicense,\r\n";
-    eng += L"and/or sell copies of the Software, provided the copyright and license notice\r\n";
-    eng += L"are included in all substantial portions of the Software.\r\n\r\n";
-    eng += L"If you mention a newer version or fork, please attribute the author as requested.\r\n\r\n";
+// Version info
+const wchar_t ABOUT_PUBLISHED[] = L"2026-01-06";
+const wchar_t ABOUT_VERSION[] = L"2026.01.06.13";
 
-    std::wstring no = L"\r\nOm WinUpdate\r\n";
-    no += L"(Win som i seier!)\r\n";
-    no += L"Publisert: "; no += ABOUT_PUBLISHED; no += L"\r\n\r\n";
-    no += L"Et lettvint Win32-grensesnitt for Microsoft\'s winget.\r\n";
-    no += L"Velg oppdateringer, installer med én forhøyelse, og se detaljert logg.\r\n\r\n";
-    no += L"Forfatter: Nalle Berg\r\n";
-    no += L"Copyleft 2025\r\n";
-    no += L"Lisens: MIT License — se LICENSE.md inkludert i distribusjonen.\r\n\r\n";
-    no += L"Sammendrag: Du står fritt til å bruke, kopiere, endre, slå sammen, publisere,\r\n";
-    no += L"distribuere, gi underlisens, og/eller selge kopier av programvaren, forutsatt at\r\n";
-    no += L"opphavsretts- og lisensmerknaden er inkludert i alle vesentlige deler.\r\n\r\n";
-    no += L"Hvis du nevner en nyere versjon eller et fork, vennligst gi forfatteren attributt som\r\n";
-    no += L"spesifisert.\r\n\r\n";
+// External i18n function
+extern std::wstring t(const char *key);
 
-    return eng + no;
+// Forward declarations
+static LRESULT CALLBACK AboutDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+void AppendRichText(HWND hEdit, const std::wstring& text, bool bold, COLORREF color, int fontSize = 9, bool centered = false);
+int GetWingetPackageCount();
+std::wstring FormatNumber(int num, bool useComma);
+
+// Global for logo image
+static Image* g_logoImage = nullptr;
+static ULONG_PTR g_gdiplusToken = 0;
+static HWND g_hEditCtrl = NULL;
+
+// Simple helper to append formatted text to RichEdit control
+void AppendRichText(HWND hEdit, const std::wstring& text, bool bold, COLORREF color, int fontSize, bool centered) {
+    CHARFORMAT2W cf = {};
+    cf.cbSize = sizeof(CHARFORMAT2W);
+    cf.dwMask = CFM_COLOR | CFM_BOLD | CFM_SIZE | CFM_FACE;
+    cf.crTextColor = color;
+    cf.dwEffects = bold ? CFE_BOLD : 0;
+    cf.yHeight = fontSize * 20; // twips
+    wcscpy_s(cf.szFaceName, L"Segoe UI");
+    
+    // Get current text length and select end
+    GETTEXTLENGTHEX gtl = {};
+    gtl.flags = GTL_DEFAULT;
+    gtl.codepage = 1200; // Unicode
+    LONG len = (LONG)SendMessageW(hEdit, EM_GETTEXTLENGTHEX, (WPARAM)&gtl, 0);
+    SendMessageW(hEdit, EM_SETSEL, len, len);
+    
+    // Apply paragraph formatting if centered
+    if (centered) {
+        PARAFORMAT2 pf = {};
+        pf.cbSize = sizeof(PARAFORMAT2);
+        pf.dwMask = PFM_ALIGNMENT;
+        pf.wAlignment = PFA_CENTER;
+        SendMessageW(hEdit, EM_SETPARAFORMAT, 0, (LPARAM)&pf);
+    }
+    
+    // Set character format and insert text
+    SendMessageW(hEdit, EM_SETCHARFORMAT, SCF_SELECTION, (LPARAM)&cf);
+    SendMessageW(hEdit, EM_REPLACESEL, FALSE, (LPARAM)text.c_str());
+    
+    // Reset to left alignment
+    if (centered) {
+        PARAFORMAT2 pf = {};
+        pf.cbSize = sizeof(PARAFORMAT2);
+        pf.dwMask = PFM_ALIGNMENT;
+        pf.wAlignment = PFA_LEFT;
+        SendMessageW(hEdit, EM_SETPARAFORMAT, 0, (LPARAM)&pf);
+    }
 }
-// ---------------------- Helper utilities (file scope) ----------------------
-static std::string WideToUtf8(const std::wstring &w) {
-    if (w.empty()) return {};
-    int size = WideCharToMultiByte(CP_UTF8, 0, w.data(), (int)w.size(), NULL, 0, NULL, NULL);
-    if (size <= 0) return std::string();
-    std::string out(size, 0);
-    WideCharToMultiByte(CP_UTF8, 0, w.data(), (int)w.size(), &out[0], size, NULL, NULL);
-    return out;
+
+// Get winget package count
+int GetWingetPackageCount() {
+    // Just return the fallback - querying takes too long for About dialog
+    return 11107;
 }
 
-static std::wstring Utf8ToWide(const std::string &s) {
-    if (s.empty()) return {};
-    int wideLen = MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), NULL, 0);
-    if (wideLen <= 0) return std::wstring(s.begin(), s.end());
-    std::wstring out(wideLen, 0);
-    MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), &out[0], wideLen);
-    return out;
-}
-
-static std::string ReadFileUtf8(const std::wstring &path) {
-    std::string narrow = WideToUtf8(path);
-    std::ifstream ifs(narrow, std::ios::binary);
-    if (!ifs) return std::string();
-    std::ostringstream ss;
-    ss << ifs.rdbuf();
-    return ss.str();
-}
-
-static std::vector<unsigned char> Base64Decode(const std::string &in) {
-    std::string s = in;
-    std::vector<int> T(256, -1);
-    const char *chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    for (int i = 0; i < 64; i++) T[(unsigned char)chars[i]] = i;
-    std::vector<unsigned char> out;
-    int val=0, valb=-8;
-    for (unsigned char c : s) {
-        if (T[c] == -1) break;
-        val = (val<<6) + T[c];
-        valb += 6;
-        if (valb>=0) {
-            out.push_back((unsigned char)((val>>valb)&0xFF));
-            valb-=8;
+std::wstring FormatNumber(int num, bool useComma) {
+    std::wstring str = std::to_wstring(num);
+    std::wstring result;
+    int count = 0;
+    for (int i = str.length() - 1; i >= 0; i--) {
+        if (count == 3) {
+            result = (useComma ? L"," : L" ") + result;
+            count = 0;
         }
+        result = str[i] + result;
+        count++;
     }
-    return out;
+    return result;
 }
 
-// Extract base64 payload from data URI in LICENSE.md and write a PNG file to temp location.
-static std::wstring SaveEmbeddedLogoToTemp()
-{
-    std::string md = ReadFileUtf8(std::wstring(L"LICENSE.md"));
-    size_t p = md.find("data:image/png;base64,");
-    if (p == std::string::npos) return std::wstring();
-    p += strlen("data:image/png;base64,");
-    size_t e = md.find(')', p);
-    std::string b64 = md.substr(p, (e==std::string::npos)? std::string::npos : (e - p));
-    // strip whitespace
-    b64.erase(std::remove_if(b64.begin(), b64.end(), [](unsigned char c){ return isspace(c); }), b64.end());
-    auto bytes = Base64Decode(b64);
-    if (bytes.empty()) return std::wstring();
-    wchar_t tmpPath[MAX_PATH]; GetTempPathW(MAX_PATH, tmpPath);
-    std::wstring out = std::wstring(tmpPath) + L"wup_mit_logo.png";
-    std::ofstream ofs(WideToUtf8(out), std::ios::binary);
-    if (!ofs) return std::wstring();
-    ofs.write((const char*)bytes.data(), (std::streamsize)bytes.size());
-    ofs.close();
-    return out;
+// Subclass procedure for RichEdit to draw logo at top
+static WNDPROC g_origEditProc = NULL;
+
+static LRESULT CALLBACK EditSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if (msg == WM_PAINT && g_logoImage) {
+        // Let RichEdit draw first
+        CallWindowProcW(g_origEditProc, hwnd, msg, wParam, lParam);
+        
+        // Draw logo on top
+        HDC hdc = GetDC(hwnd);
+        Graphics graphics(hdc);
+        
+        // Get scroll position
+        POINT pt = {0, 0};
+        SendMessageW(hwnd, EM_GETSCROLLPOS, 0, (LPARAM)&pt);
+        
+        // Draw logo centered at top (scaled to 75%), offset by scroll
+        RECT rc;
+        GetClientRect(hwnd, &rc);
+        int logoW = (int)(g_logoImage->GetWidth() * 0.75);
+        int logoH = (int)(g_logoImage->GetHeight() * 0.75);
+        int x = (rc.right - logoW) / 2;
+        int y = 10 - pt.y; // Offset by scroll position
+        
+        // Only draw if at least partially visible
+        if (y + logoH > 0 && y < rc.bottom) {
+            graphics.DrawImage(g_logoImage, x, y, logoW, logoH);
+        }
+        
+        ReleaseDC(hwnd, hdc);
+        return 0;
+    }
+    return CallWindowProcW(g_origEditProc, hwnd, msg, wParam, lParam);
 }
 
-// Show the license popup (modal)
-void ShowLicenseDialog(HWND parent)
-{
-    std::string md = ReadFileUtf8(std::wstring(L"LICENSE.md"));
-    if (md.empty()) {
-        MessageBoxW(parent, L"License file not found.", L"License", MB_OK | MB_ICONERROR);
-        return;
+// Window procedure
+static LRESULT CALLBACK AboutDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+        case WM_COMMAND:
+            if (LOWORD(wParam) == IDOK || LOWORD(wParam) == IDCANCEL) {
+                PostQuitMessage(0);
+                return 0;
+            }
+            if (LOWORD(wParam) == 1001) { // View License button
+                ShowLicenseDialog(hwnd);
+                return 0;
+            }
+            break;
+        case WM_CLOSE:
+            PostQuitMessage(0);
+            return 0;
     }
-    // save embedded logo to temp file
-    std::wstring logoPath = SaveEmbeddedLogoToTemp();
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
 
-    const int W = 640, H = 520;
+// Main About dialog function
+void ShowAboutDialog(HWND parent) {
+    LoadLibraryW(L"Riched20.dll");
+    
+    // Initialize GDI+
+    GdiplusStartupInput gdiplusStartupInput;
+    ULONG_PTR gdiplusToken;
+    GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
+    
+    // Load logo image with transparency
+    wchar_t logoPath[MAX_PATH];
+    GetModuleFileNameW(NULL, logoPath, MAX_PATH);
+    wchar_t* lastSlash = wcsrchr(logoPath, L'\\');
+    if (lastSlash) {
+        *(lastSlash + 1) = 0;
+        wcscat_s(logoPath, L"winupdate_logo.png");
+    }
+    g_logoImage = Image::FromFile(logoPath);
+    
+    // Create window
+    const int W = 420, H = 560; // Increased height for logo
     RECT pr = {0,0,0,0};
     if (parent && IsWindow(parent)) GetWindowRect(parent, &pr);
-    int px = (pr.right + pr.left) / 2; int py = (pr.bottom + pr.top) / 2;
-    int x = (px==0)? CW_USEDEFAULT : (px - W/2); int y = (py==0)? CW_USEDEFAULT : (py - H/2);
+    int px = (pr.right + pr.left) / 2;
+    int py = (pr.bottom + pr.top) / 2;
+    int x = (px==0) ? CW_USEDEFAULT : (px - W/2);
+    int y = (py==0) ? CW_USEDEFAULT : (py - H/2);
+    
+    // Ensure dialog is not positioned above screen (minimum 30px from top)
+    if (y < 30) y = 30;
+
     HINSTANCE hi = GetModuleHandleW(NULL);
-    WNDCLASSW wc{}; wc.lpfnWndProc = DefWindowProcW; wc.hInstance = hi; wc.lpszClassName = L"WUPLicenseDlgClass"; RegisterClassW(&wc);
-    HWND dlg = CreateWindowExW(WS_EX_DLGMODALFRAME, wc.lpszClassName, L"License", WS_POPUP | WS_CAPTION | WS_SYSMENU, x, y, W, H, parent, NULL, hi, NULL);
-    if (!dlg) { MessageBoxW(parent, L"Unable to create license window.", L"License", MB_OK | MB_ICONERROR); return; }
-    // image static
-    HWND him = CreateWindowExW(0, L"Static", NULL, WS_CHILD | WS_VISIBLE | SS_BITMAP, (W-128)/2, 8, 128, 128, dlg, NULL, hi, NULL);
-    HBITMAP hbmp = NULL;
-    if (!logoPath.empty()) {
-        // LoadImage expects BMP for STM_SETIMAGE; convert PNG -> bitmap via LoadImage from file won't work for PNG.
-        // As fallback, we simply leave the static empty; users can open LICENSE.md to view the embedded image.
-        hbmp = (HBITMAP)LoadImageW(NULL, logoPath.c_str(), IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE);
-        if (hbmp) SendMessageW(him, STM_SETIMAGE, IMAGE_BITMAP, (LPARAM)hbmp);
+    WNDCLASSW wc = {};
+    wc.lpfnWndProc = AboutDlgProc;
+    wc.hInstance = hi;
+    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    wc.lpszClassName = L"WUPAboutDlgClass";
+    if (!GetClassInfoW(hi, wc.lpszClassName, &wc)) {
+        RegisterClassW(&wc);
     }
-    // license text edit
-    std::wstring wmd = Utf8ToWide(md);
-    HWND he = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", NULL, WS_CHILD | WS_VISIBLE | ES_LEFT | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY, 12, 144, W-24, H-200, dlg, NULL, hi, NULL);
-    SendMessageW(he, WM_SETFONT, (WPARAM)GetStockObject(DEFAULT_GUI_FONT), TRUE);
-    SendMessageW(he, EM_SETSEL, 0, 0);
-    SendMessageW(he, EM_REPLACESEL, FALSE, (LPARAM)wmd.c_str());
-    // close button
-    HWND hb = CreateWindowExW(0, L"Button", L"Close", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, W/2 - 50, H-44, 100, 28, dlg, (HMENU)IDOK, hi, NULL);
+
+    HWND dlg = CreateWindowExW(WS_EX_DLGMODALFRAME | WS_EX_WINDOWEDGE, 
+        wc.lpszClassName, L"About WinUpdate", 
+        WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_VISIBLE, 
+        x, y, W, H, parent, NULL, hi, NULL);
+    
+    if (!dlg) {
+        MessageBoxW(parent, L"Unable to create About window.", L"Error", MB_OK | MB_ICONERROR);
+        return;
+    }
+
+    // Create RichEdit control - fills entire area, logo will scroll with content
+    HWND hEdit = CreateWindowExW(0, L"RichEdit20W", NULL,
+        WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL,
+        10, 10, W - 20, H - 80,
+        dlg, (HMENU)100, hi, NULL);
+    
+    g_hEditCtrl = hEdit;
+    
+    if (!hEdit) {
+        DestroyWindow(dlg);
+        return;
+    }
+    
+    // Subclass the RichEdit to draw logo
+    g_origEditProc = (WNDPROC)SetWindowLongPtrW(hEdit, GWLP_WNDPROC, (LONG_PTR)EditSubclassProc);
+    
+    SendMessageW(hEdit, EM_SETTARGETDEVICE, 0, 0); // Enable word wrap
+    SendMessageW(hEdit, EM_SETEVENTMASK, 0, ENM_LINK);
+    
+    // Add space for logo at top
+    int logoH = g_logoImage ? (int)(g_logoImage->GetHeight() * 0.75) : 0;
+    int logoSpaceLines = (logoH + 20) / 15; // Approximate lines needed
+    for (int i = 0; i < logoSpaceLines; i++) {
+        AppendRichText(hEdit, L"\r\n", false, RGB(0, 0, 0), 9, false);
+    }
+    
+    // Build formatted About content
+    AppendRichText(hEdit, L"WinUpdate\r\n", true, RGB(0, 70, 140), 16, true);
+    AppendRichText(hEdit, t("about_subtitle") + L"\r\n\r\n", false, RGB(80, 80, 80), 10, true);
+    
+    // Version info divider
+    AppendRichText(hEdit, L"═════════════════════════════\r\n", false, RGB(100, 140, 180), 9, true);
+    AppendRichText(hEdit, t("about_published") + L" ", true, RGB(0, 0, 0), 9, false);
+    AppendRichText(hEdit, std::wstring(ABOUT_PUBLISHED) + L"\r\n", false, RGB(0, 0, 0), 9, false);
+    AppendRichText(hEdit, t("about_version") + L" ", true, RGB(0, 0, 0), 9, false);
+    AppendRichText(hEdit, std::wstring(ABOUT_VERSION) + L"\r\n", false, RGB(0, 0, 0), 9, false);
+    AppendRichText(hEdit, L"═════════════════════════════\r\n\r\n", false, RGB(100, 140, 180), 9, true);
+    
+    // Main description with dynamic package count
+    int pkgCount = GetWingetPackageCount();
+    wchar_t localeName[LOCALE_NAME_MAX_LENGTH];
+    GetUserDefaultLocaleName(localeName, LOCALE_NAME_MAX_LENGTH);
+    bool useComma = (wcsstr(localeName, L"nb") != localeName && wcsstr(localeName, L"no") != localeName);
+    std::wstring formattedCount = FormatNumber(pkgCount, useComma);
+    
+    std::wstring desc = t("about_intro");
+    size_t pos = desc.find(L"<xx xxx>");
+    if (pos != std::wstring::npos) {
+        desc.replace(pos, 8, formattedCount);
+    }
+    AppendRichText(hEdit, desc + L"\r\n\r\n", false, RGB(40, 40, 40), 9, false);
+    
+    // Three modes
+    AppendRichText(hEdit, t("about_modes_intro") + L"\r\n\r\n", false, RGB(40, 40, 40), 9, false);
+    
+    AppendRichText(hEdit, L"1: ", true, RGB(0, 70, 140), 9, false);
+    AppendRichText(hEdit, t("about_mode1_title") + L"\r\n", true, RGB(0, 0, 0), 9, false);
+    AppendRichText(hEdit, t("about_mode1_desc") + L"\r\n\r\n", false, RGB(60, 60, 60), 9, false);
+    
+    AppendRichText(hEdit, L"2: ", true, RGB(0, 70, 140), 9, false);
+    AppendRichText(hEdit, t("about_mode2_title") + L"\r\n", true, RGB(0, 0, 0), 9, false);
+    AppendRichText(hEdit, t("about_mode2_desc") + L"\r\n\r\n", false, RGB(60, 60, 60), 9, false);
+    
+    AppendRichText(hEdit, L"3: ", true, RGB(0, 70, 140), 9, false);
+    AppendRichText(hEdit, t("about_mode3_title") + L"\r\n", true, RGB(0, 0, 0), 9, false);
+    AppendRichText(hEdit, t("about_mode3_desc") + L"\r\n\r\n", false, RGB(60, 60, 60), 9, false);
+    
+    AppendRichText(hEdit, t("about_no_ms_account") + L"\r\n\r\n", false, RGB(0, 100, 0), 9, false);
+    AppendRichText(hEdit, t("about_conclusion") + L"\r\n\r\n", false, RGB(40, 40, 40), 9, false);
+    
+    // License divider
+    AppendRichText(hEdit, L"═════════════════════════════\r\n\r\n", false, RGB(100, 140, 180), 9, true);
+    AppendRichText(hEdit, t("about_license_info") + L"\r\n\r\n", true, RGB(0, 70, 140), 9, false);
+    
+    // Scroll to top
+    SendMessageW(hEdit, EM_SETSEL, 0, 0);
+    SendMessageW(hEdit, EM_SCROLLCARET, 0, 0);
+    
+    // Create buttons at bottom (centered with gap)
+    int btnY = H - 65;  // Account for title bar and borders
+    int btnWidth = 90;
+    int btnGap = 10;
+    int totalWidth = btnWidth * 2 + btnGap;
+    int startX = (W - totalWidth) / 2;
+    
+    HWND btnLicense = CreateWindowExW(0, L"Button", t("about_view_license").c_str(),
+        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_TABSTOP,
+        startX, btnY, btnWidth, 30,
+        dlg, (HMENU)1001, hi, NULL);
+    
+    HWND btnClose = CreateWindowExW(0, L"Button", t("about_close").c_str(),
+        WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON | WS_TABSTOP,
+        startX + btnWidth + btnGap, btnY, btnWidth, 30,
+        dlg, (HMENU)IDOK, hi, NULL);
+    
+    // Set font for buttons
+    HFONT hFont = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+    SendMessageW(btnLicense, WM_SETFONT, (WPARAM)hFont, TRUE);
+    SendMessageW(btnClose, WM_SETFONT, (WPARAM)hFont, TRUE);
+    
+    // Modal loop
     if (parent && IsWindow(parent)) EnableWindow(parent, FALSE);
-    ShowWindow(dlg, SW_SHOW);
-    MSG msg; BOOL running = TRUE;
-    while (running && GetMessageW(&msg, NULL, 0, 0)) {
-        // Handle Ctrl+W
+    SetFocus(btnClose);
+    
+    MSG msg;
+    while (GetMessageW(&msg, NULL, 0, 0)) {
         if (HandleCtrlW(dlg, msg.message, msg.wParam, msg.lParam)) {
-            running = FALSE;
-            DestroyWindow(dlg);
             break;
         }
-        if (msg.hwnd == dlg) {
-            if (msg.message == WM_COMMAND) {
-                int id = LOWORD(msg.wParam);
-                if (id == IDOK) { running = FALSE; DestroyWindow(dlg); break; }
-            }
+        if (!IsDialogMessageW(dlg, &msg)) {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
         }
-        TranslateMessage(&msg); DispatchMessage(&msg);
     }
+    
+    DestroyWindow(dlg);
+    
+    // Cleanup GDI+ resources
+    if (g_logoImage) {
+        delete g_logoImage;
+        g_logoImage = nullptr;
+    }
+    GdiplusShutdown(gdiplusToken);
+    
     if (parent && IsWindow(parent)) {
         EnableWindow(parent, TRUE);
         SetForegroundWindow(parent);
         BringWindowToTop(parent);
     }
-    if (hbmp) DeleteObject(hbmp);
 }
 
-// ---------------------- About dialog (file scope) ----------------------
-void ShowAboutDialog(HWND parent)
-{
-    // Create a simple centered modal window with formatted controls
-    const int W = 620, H = 380;
+// License dialog window procedure
+static LRESULT CALLBACK LicenseDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+        case WM_COMMAND:
+            if (LOWORD(wParam) == IDOK || LOWORD(wParam) == IDCANCEL) {
+                PostQuitMessage(0);
+                return 0;
+            }
+            break;
+        case WM_CLOSE:
+            PostQuitMessage(0);
+            return 0;
+    }
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
+// License dialog - load GPLv2.md file with formatted content
+void ShowLicenseDialog(HWND parent) {
+    LoadLibraryW(L"Riched20.dll");
+    
+    // Create license window - larger to accommodate full GPL text
+    const int W = 650, H = 600;
     RECT pr = {0,0,0,0};
     if (parent && IsWindow(parent)) GetWindowRect(parent, &pr);
     int px = (pr.right + pr.left) / 2;
@@ -186,48 +356,169 @@ void ShowAboutDialog(HWND parent)
     int y = (py==0) ? CW_USEDEFAULT : (py - H/2);
 
     HINSTANCE hi = GetModuleHandleW(NULL);
-    WNDCLASSW wc{};
-    wc.lpfnWndProc = DefWindowProcW;
+    WNDCLASSW wc = {};
+    wc.lpfnWndProc = LicenseDlgProc;
     wc.hInstance = hi;
-    wc.lpszClassName = L"WUPAboutDlgClass";
-    RegisterClassW(&wc);
-
-    HWND dlg = CreateWindowExW(WS_EX_DLGMODALFRAME, wc.lpszClassName, L"About WinUpdate", WS_POPUP | WS_CAPTION | WS_SYSMENU, x, y, W, H, parent, NULL, hi, NULL);
-    if (!dlg) { MessageBoxW(parent, L"Unable to create About window.", L"About", MB_OK | MB_ICONERROR); return; }
-
-    std::wstring txt = BuildAboutText();
-    HWND he = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", NULL, WS_CHILD | WS_VISIBLE | ES_LEFT | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY, 12, 12, W-24, H-84, dlg, NULL, hi, NULL);
-    SendMessageW(he, WM_SETFONT, (WPARAM)GetStockObject(DEFAULT_GUI_FONT), TRUE);
-    SendMessageW(he, EM_SETSEL, 0, 0);
-    SendMessageW(he, EM_REPLACESEL, FALSE, (LPARAM)txt.c_str());
-
-    HWND vb = CreateWindowExW(0, L"Button", L"View License", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 12, H-56, 120, 32, dlg, (HMENU)1001, hi, NULL);
-    HWND cb = CreateWindowExW(0, L"Button", L"Close", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, W-120-12, H-56, 120, 32, dlg, (HMENU)IDOK, hi, NULL);
-
-    if (parent && IsWindow(parent)) EnableWindow(parent, FALSE);
-    ShowWindow(dlg, SW_SHOW);
-    MSG msg; BOOL running = TRUE;
-    while (running && GetMessageW(&msg, NULL, 0, 0)) {
-        // Handle Ctrl+W
-        if (HandleCtrlW(dlg, msg.message, msg.wParam, msg.lParam)) {
-            running = FALSE;
-            DestroyWindow(dlg);
-            break;
-        }
-        if (msg.hwnd == dlg || IsChild(dlg, msg.hwnd)) {
-            if (msg.message == WM_COMMAND) {
-                int id = LOWORD(msg.wParam);
-                if (id == IDOK) { running = FALSE; DestroyWindow(dlg); break; }
-                if (id == 1001) { ShowLicenseDialog(dlg); }
-            }
-        }
-        if (msg.message == WM_CLOSE && msg.hwnd == dlg) {
-            running = FALSE;
-            DestroyWindow(dlg);
-            break;
-        }
-        TranslateMessage(&msg); DispatchMessage(&msg);
+    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    wc.lpszClassName = L"WUPLicenseDlgClass";
+    if (!GetClassInfoW(hi, wc.lpszClassName, &wc)) {
+        RegisterClassW(&wc);
     }
+
+    HWND dlg = CreateWindowExW(WS_EX_DLGMODALFRAME | WS_EX_WINDOWEDGE, 
+        wc.lpszClassName, L"GNU General Public License v2", 
+        WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_VISIBLE, 
+        x, y, W, H, parent, NULL, hi, NULL);
+    
+    if (!dlg) {
+        MessageBoxW(parent, L"Unable to create License window.", L"Error", MB_OK | MB_ICONERROR);
+        return;
+    }
+    
+    // Load and display GNU logo at top
+    wchar_t exePath[MAX_PATH];
+    GetModuleFileNameW(NULL, exePath, MAX_PATH);
+    std::wstring exeDir = exePath;
+    size_t lastSlash = exeDir.find_last_of(L"\\");
+    if (lastSlash != std::wstring::npos) {
+        exeDir = exeDir.substr(0, lastSlash);
+    }
+    
+    // Try to load GNU logo (now converted to BMP)
+    std::wstring logoPath = exeDir + L"\\GnuLogo.bmp";
+    HBITMAP hLogoBitmap = (HBITMAP)LoadImageW(NULL, logoPath.c_str(), IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE);
+    int logoHeight = 0;
+    
+    if (hLogoBitmap) {
+        BITMAP bmp;
+        GetObject(hLogoBitmap, sizeof(BITMAP), &bmp);
+        logoHeight = bmp.bmHeight + 10; // Add some padding
+        
+        HWND hLogoWnd = CreateWindowExW(0, L"Static", NULL,
+            WS_CHILD | WS_VISIBLE | SS_BITMAP | SS_CENTERIMAGE,
+            (W - bmp.bmWidth) / 2, 10, bmp.bmWidth, bmp.bmHeight,
+            dlg, (HMENU)101, hi, NULL);
+        SendMessageW(hLogoWnd, STM_SETIMAGE, IMAGE_BITMAP, (LPARAM)hLogoBitmap);
+    }
+
+    // Create RichEdit control for license text - positioned below logo
+    int editTop = logoHeight > 0 ? logoHeight + 20 : 10;
+    HWND hEdit = CreateWindowExW(0, L"RichEdit20W", NULL,
+        WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL,
+        10, editTop, W - 20, H - editTop - 70,
+        dlg, (HMENU)100, hi, NULL);
+    
+    if (!hEdit) {
+        DestroyWindow(dlg);
+        return;
+    }
+    
+    SendMessageW(hEdit, EM_SETTARGETDEVICE, 0, 0); // Enable word wrap
+    SendMessageW(hEdit, EM_SETEVENTMASK, 0, ENM_LINK);
+    
+    // Load and parse GPLv2.md file
+    std::wstring licensePath = exeDir + L"\\GPLv2.md";
+    HANDLE hFile = CreateFileW(licensePath.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    
+    if (hFile != INVALID_HANDLE_VALUE) {
+        DWORD fileSize = GetFileSize(hFile, NULL);
+        if (fileSize > 0 && fileSize < 1024*1024) { // Max 1MB
+            char* buffer = new char[fileSize + 1];
+            DWORD bytesRead;
+            if (ReadFile(hFile, buffer, fileSize, &bytesRead, NULL)) {
+                buffer[bytesRead] = '\0';
+                
+                // Convert to wide string
+                int wideSize = MultiByteToWideChar(CP_UTF8, 0, buffer, bytesRead, NULL, 0);
+                wchar_t* wideBuffer = new wchar_t[wideSize + 1];
+                MultiByteToWideChar(CP_UTF8, 0, buffer, bytesRead, wideBuffer, wideSize);
+                wideBuffer[wideSize] = L'\0';
+                
+                // Parse and format the license text
+                std::wstring text(wideBuffer);
+                delete[] wideBuffer;
+                
+                // Add title
+                AppendRichText(hEdit, L"GNU GENERAL PUBLIC LICENSE\r\n", true, RGB(0, 70, 140), 14, true);
+                AppendRichText(hEdit, L"Version 2, June 1991\r\n\r\n", false, RGB(0, 70, 140), 10, true);
+                
+                // Parse the content
+                size_t pos = 0;
+                std::wstring line;
+                std::wstringstream ss(text);
+                
+                while (std::getline(ss, line)) {
+                    // Remove carriage return if present
+                    if (!line.empty() && line.back() == L'\r') {
+                        line.pop_back();
+                    }
+                    
+                    // Check for major section headers (all caps)
+                    if (line.find(L"TERMS AND CONDITIONS") != std::wstring::npos) {
+                        AppendRichText(hEdit, L"\r\n" + line + L"\r\n", true, RGB(139, 0, 0), 11, false);
+                    } else if (line.find(L"NO WARRANTY") != std::wstring::npos) {
+                        AppendRichText(hEdit, L"\r\n" + line + L"\r\n", true, RGB(139, 0, 0), 11, false);
+                    } else if (line == L"Preamble") {
+                        AppendRichText(hEdit, L"\r\n" + line + L"\r\n", true, RGB(0, 70, 140), 12, false);
+                    } else if (line.length() > 0 && line.length() < 100 && 
+                               (line.find(L"0.") == 0 || line.find(L"1.") == 0 || line.find(L"2.") == 0 || 
+                                line.find(L"3.") == 0 || line.find(L"4.") == 0 || line.find(L"5.") == 0 || 
+                                line.find(L"6.") == 0 || line.find(L"7.") == 0 || line.find(L"8.") == 0 || 
+                                line.find(L"9.") == 0 || line.find(L"10.") == 0 || line.find(L"11.") == 0 || 
+                                line.find(L"12.") == 0)) {
+                        // Numbered sections
+                        AppendRichText(hEdit, L"\r\n" + line + L"\r\n", true, RGB(0, 0, 139), 10, false);
+                    } else if (line.length() > 0 && line.length() < 50 && 
+                               (line.find(L"a)") == 0 || line.find(L"b)") == 0 || line.find(L"c)") == 0)) {
+                        // Sub-sections
+                        AppendRichText(hEdit, line + L"\r\n", true, RGB(0, 0, 0), 9, false);
+                    } else {
+                        // Regular text
+                        AppendRichText(hEdit, line + L"\r\n", false, RGB(40, 40, 40), 9, false);
+                    }
+                }
+            }
+            delete[] buffer;
+        }
+        CloseHandle(hFile);
+    } else {
+        AppendRichText(hEdit, L"GPLv2.md file not found.\r\n\r\n", true, RGB(139, 0, 0), 10, false);
+        AppendRichText(hEdit, L"Please see the GPLv2.md file in the installation directory.", false, RGB(40, 40, 40), 9, false);
+    }
+    
+    // Scroll to top
+    SendMessageW(hEdit, EM_SETSEL, 0, 0);
+    SendMessageW(hEdit, EM_SCROLLCARET, 0, 0);
+    
+    // Create OK button
+    int btnWidth = 80;
+    int btnX = (W - btnWidth) / 2;
+    int btnY = H - 61;
+    
+    HWND btnOK = CreateWindowExW(0, L"Button", L"OK",
+        WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON | WS_TABSTOP,
+        btnX, btnY, btnWidth, 30,
+        dlg, (HMENU)IDOK, hi, NULL);
+    
+    HFONT hFont = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+    SendMessageW(btnOK, WM_SETFONT, (WPARAM)hFont, TRUE);
+    
+    // Modal loop
+    if (parent && IsWindow(parent)) EnableWindow(parent, FALSE);
+    SetFocus(btnOK);
+    
+    MSG msg;
+    while (GetMessageW(&msg, NULL, 0, 0)) {
+        if (HandleCtrlW(dlg, msg.message, msg.wParam, msg.lParam)) {
+            break;
+        }
+        if (!IsDialogMessageW(dlg, &msg)) {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+    }
+    
+    DestroyWindow(dlg);
     if (parent && IsWindow(parent)) {
         EnableWindow(parent, TRUE);
         SetForegroundWindow(parent);

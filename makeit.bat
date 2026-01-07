@@ -76,6 +76,13 @@ if exist "%BUILD_DIR%\closetray.exe" (
 if exist "wup_settings.txt" copy /Y "wup_settings.txt" "%PACKAGE_DIR%\wup_settings.txt" >nul 2>&1
 if exist "README.md" copy /Y "README.md" "%PACKAGE_DIR%\README.md" >nul 2>&1
 if exist "LICENSE.md" copy /Y "LICENSE.md" "%PACKAGE_DIR%\LICENSE.md" >nul 2>&1
+if exist "GPLv2.md" copy /Y "GPLv2.md" "%PACKAGE_DIR%\GPLv2.md" >nul 2>&1
+if exist "GnuLogo.bmp" copy /Y "GnuLogo.bmp" "%PACKAGE_DIR%\GnuLogo.bmp" >nul 2>&1
+if exist "winupdate_logo.png" copy /Y "winupdate_logo.png" "%PACKAGE_DIR%\winupdate_logo.png" >nul 2>&1
+REM Copy MinGW runtime DLLs required for standalone execution
+if exist "C:\mingw64\bin\libgcc_s_seh-1.dll" copy /Y "C:\mingw64\bin\libgcc_s_seh-1.dll" "%PACKAGE_DIR%\libgcc_s_seh-1.dll" >nul 2>&1
+if exist "C:\mingw64\bin\libstdc++-6.dll" copy /Y "C:\mingw64\bin\libstdc++-6.dll" "%PACKAGE_DIR%\libstdc++-6.dll" >nul 2>&1
+if exist "C:\mingw64\bin\libmcfgthread-2.dll" copy /Y "C:\mingw64\bin\libmcfgthread-2.dll" "%PACKAGE_DIR%\libmcfgthread-2.dll" >nul 2>&1
 echo Packaged to %PACKAGE_DIR%.
 echo
 echo --- Current per-user settings (%%APPDATA%%\WinUpdate\wup_settings.ini) ---
@@ -85,4 +92,5 @@ if exist "%APPDATA%\WinUpdate\wup_settings.ini" (
     echo [no file found]
 )
 echo -----------------------------------------------------------------
+.\run.bat
 endlocal

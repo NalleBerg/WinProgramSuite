@@ -7,15 +7,99 @@ upgrade_now=Oppdater nå
 refresh=Gjenoppfrisk
 package_col=Pakke
 id_col=Id
-loading_title=Laster, vennligst
-loading_desc=Spørrer winget
+current_col=Installert
+available_col=Tilgjengelig
+skip_col=Skippe
+unskip_btn=Uskippe
+unskip=Uskippe
+loading_title=Laster, vennligst vent...
+loading_desc=Spør winget
 your_system_updated=Systemet ditt er oppdatert!
 no_packages_selected=Vennligst velg minst én pakke å installere.
 install_done=Ferdig!
 msg_error_elevate=Kunne ikke starte prosess med forhøyede rettigheter.
 config_btn=Innstillinger
 about_btn=Om
+config_dialog_title=Innstillinger
+config_mode_manual=Manuelt
+config_mode_startup=Skann ved oppstart av Windows
+config_mode_systray=Ligge i systemstatusfeltet
+config_polling_startup=Ved oppstart
+config_polling_hours=Hver %d time
+config_status_manual=Manuelt modus: programmet kjører bare når du starter det.
+config_status_startup_only=Oppstartmodus: skann ved Windows-oppstart.
+config_status_systray_startup=Systemstatusfelt-modus: skann ved oppstart, deretter med intervaller.
+config_status_systray_polling=Systemstatusfelt-modus: skann hver %d time.
+config_btn_add_to_tray=Legg til i systemstatusfeltet nå
+config_btn_use=Bruk
+config_btn_ok=OK
+config_btn_cancel=Avbryt
+install_dialog_title=Installerer oppdateringer
+install_preparing=Forbereder...
+install_of=av
+install_progress=Installerer %d av %d
+installing_package=Installerer %s
+lang_changed_en=Språk endret til engelsk (UK)
+lang_changed_nb=Språk endret til norsk (bokmål)
+lang_changed_sv=Språk endret til svensk
 tray_scanning=Skanner...
 tray_no_updates=Ingen oppdateringer tilgjengelig
 tray_one_update=1 oppdatering tilgjengelig
 tray_updates_available=oppdateringer tilgjengelig
+tray_next_scan=Neste skanning:
+tray_balloon_updates_title=Oppdateringer tilgjengelig
+tray_balloon_one_update=1 oppdatering funnet. Klikk for å vise.
+tray_balloon_multiple_updates=%d oppdateringer funnet. Klikk for å vise.
+tray_balloon_no_updates=Du er oppdatert!
+about_title=Om WinUpdate
+about_subtitle=«Win» som «Å vinne»
+about_published=Publisert:
+about_version=Versjon:
+about_intro=WinUpdate er en applikasjon som passer på at du holder deg oppdatert. Den støtter <xx xxx> applikasjoner fra et utall produsenter.
+about_modes_intro=Programmet kan kjøres på tre måter:
+about_mode1_title=Manuelt
+about_mode1_desc=Du åpner programmet, og winget (innebygd i Windows 10 og 11), som programmet bruker, leter opp hvilke oppdateringer det er til programmene du har installert på din maskin. Du velger hvilke du vil installere, eller klikker på «Velg alle» for å installere alt. Så klikker du «Oppdater nå» og programmene du har valgt blir oppdatert til nyeste versjon.
+about_mode2_title=Skann ved oppstart av Windows
+about_mode2_desc=Hver gang du starter Windows, gjør den en skanning i bakgrunnen, og åpner programmet om noen oppdateringer blir funnet. Ellers virker programmet også som manuelt.
+about_mode3_title=Ligge i systemstatusfeltet
+about_mode3_desc=Programmet starter ved oppstart og skanner etter oppdateringer, før det legger seg i systemstatusfeltet (nede til høyre, ved klokken), der det skanner etter oppdateringer etter så lang tid du har valgt i «Innstillinger». Når den finner oppdateringer, vil den varsle deg igjennom Windows' varslingssystem. Du kan så klikke på ikonet i systemstatusfeltet for å åpne programmet og se/installere oppdateringen(e).
+about_no_ms_account=Du trenger ikke være pålogget Microsoft-kontoen din for å bruke programmet.
+about_conclusion=Fra nå av kan du være mer oppdatert på din pc enn du noen gang har vært før!
+about_license_info=Lisens: GPLv2 — se lisens ved å klikke på knappen nederst til venstre
+about_description=WinUpdate er en applikasjon som passer på at du holder deg oppdatert. Den støtter over 11 000 pakker applikasjoner fra et utall produsenter.
+
+about_description2=Programmet kan kjøres på tre måter:
+
+1: Manuelt
+Du åpner programmet, og winget (innebygd i Windows 10 og 11), som programmet bruker, leter opp hvilke oppdateringer det er til programmene du har installert på din maskin. Du velger hvilke du vil installere, eller klikker på «Velg alle» for å installere alt. Så klikker du «Oppdater nå» og programmene du har valgt blir oppdatert til nyeste versjon.
+
+2: Scan ved oppstart av Windows
+Hver gang du starter Windows, gjør den en skanning i bakgrunnen, og åpner programmet om noen oppdateringer blir funnet. Ellers virker programmet også som manuelt.
+
+3: Ligge i systemstatusfeltet
+Programmet starter ved oppstart og skanner etter oppdateringer, før det legger seg i systemstatusfeltet (nede til høyre, ved klokken), der det skanner etter oppdateringer etter så lang tid du har valgt i «Innstillinger». Når den finner oppdateringer, vil den varsle deg igjennom Windows' varslingssystem. Du kan så klikke på ikonet i systemstatusfeltet for å åpne programmet og se/installere oppdateringen(e).
+
+Du trenger ikke være pålogget Microsoft-kontoen din for å bruke programmet.
+
+Fra nå av kan du være mer oppdatert på din pc enn du noen gang har vært før!
+about_supports=
+about_packages=
+about_author=Forfatter:
+about_copyleft=Copyleft
+about_license=Lisens:
+about_license_name=GNU General Public License v2.0
+about_license_file=se LICENSE.md inkludert i distribusjonen.
+about_summary=Sammendrag:
+about_summary_text=Dette programmet er fri programvare; du kan redistribuere det og/eller modifisere det under betingelsene i GNU General Public License versjon 2, som publisert av Free Software Foundation. Dette programmet distribueres i håp om at det vil være nyttig, men UTEN NOEN GARANTI; uten selv underforstått garanti for SALGBARHET eller EGNETHET FOR ET BESTEMT FORMÅL.
+about_attribution=Hvis du nevner en nyere versjon eller et fork, vennligst gi forfatteren attributt som spesifisert.
+about_view_license=Vis lisens
+about_close=Lukk
+tray_menu_scan=Skann nå
+tray_menu_open=Åpne hovedvindu
+tray_menu_exit=Avslutt
+skip_confirm_question=Hoppe over denne oppdateringen av <appname>?
+skip_confirm_body=Versjon <available> vil ikke vises i oppdateringslisten mer.\nVersionen etter <available> vil imidlertid vise.\nDu hopper bare over den versjonen.
+btn_do_it=Gjør det!
+btn_cancel=Avbryt
+skip_tooltip=Hoppe over denne oppdateringen av <appname>?
+unskip_tooltip=Klikk på raden og trykk Uskippe for å utføre det

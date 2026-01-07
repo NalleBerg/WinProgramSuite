@@ -9,7 +9,7 @@
 - **⏭️ Skip Updates** — Skip specific package versions you don't want to install
 - **🔄 Unskip Management** — Review and re-enable previously skipped updates
 - **💾 Persistent Settings** — Your preferences are saved between sessions
-- **🌍 Multi-Language Support** — English (GB) and Norwegian (Bokmål) built-in
+- **🌍 Multi-Language Support** — English (GB), Norwegian (Bokmål), and Swedish built-in
 - **🎨 Clean UI** — Modern Windows interface with hyperlinks and visual feedback
 - **🔐 Single UAC Prompt** — One elevation for all updates (not one per package)
 - **� Install Dialog** — Animated progress dialog with real-time output during installation
@@ -83,7 +83,7 @@ WinUpdate automatically manages Windows startup shortcuts:
 **✅ Working:**
 - Core update functionality with animated install dialog
 - Skip/Unskip management
-- Multi-language support (English/Norwegian)
+- Multi-language support (English/Norwegian/Swedish)
 - System tray with automatic periodic scanning
 - Three configuration modes with startup integration
 - Automatic startup shortcut management with self-healing
@@ -101,7 +101,7 @@ This is a work in progress, but it's fully functional!
 
 - **Settings:** `%APPDATA%\WinUpdate\wup_settings.ini`
 - **Logs:** `%APPDATA%\WinUpdate\logs\wup_run_log.txt`
-- **Localization:** `i18n\en_GB.txt`, `i18n\nb_NO.txt`
+- **Localization:** `locale\en_GB.txt`, `locale\nb_NO.txt`, `locale\sv_SE.txt`
 
 ## 🤝 Contributing
 

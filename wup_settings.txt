@@ -1,1 +1,1 @@
-language=nb_NO
+language=sv_SE

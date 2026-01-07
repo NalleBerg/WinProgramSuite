@@ -1,0 +1,105 @@
+# Swedish translations for WinUpdate
+app_window_title=WinUpdate - winget GUI-uppdaterare
+app_title=WinUpdate
+list_last_updated_prefix=Lista senast uppdaterad:
+select_all=Välj alla
+upgrade_now=Uppdatera nu
+refresh=Ladda om
+package_col=Paket
+id_col=Id
+current_col=Installerad
+available_col=Tillgänglig
+skip_col=Skippa
+unskip_btn=Oskippa
+unskip=Oskippa!
+loading_title=Laddar, vänligen vänta...
+loading_desc=Frågar winget
+your_system_updated=Ditt system är uppdaterat!
+no_packages_selected=Vänligen välj minst ett paket att installera.
+install_done=Klart!
+msg_error_elevate=Kunde inte starta process med förhöjda rättigheter.
+config_btn=Inställningar
+about_btn=Om
+config_dialog_title=Inställningar
+config_mode_manual=Manuellt
+config_mode_startup=Skanna vid Windows start
+config_mode_systray=Köra i systemfältet
+config_polling_startup=Vid uppstart
+config_polling_hours=Sök efter uppdateringar varje %d:e timme
+config_status_manual=Manuellt läge: programmet körs bara när du startar det.
+config_status_startup_only=Uppstartsläge: skanna vid Windows-start.
+config_status_systray_startup=Systemfältsläge: skanna vid uppstart, sedan med intervaller.
+config_status_systray_polling=Systemfältsläge: skanna var %d:e timme.
+config_btn_add_to_tray=Lägg till i systemfältet nu
+config_btn_use=Använd
+config_btn_ok=OK
+config_btn_cancel=Avboka
+install_dialog_title=Installerar uppdateringar
+install_preparing=Förbereder...
+install_of=av
+install_progress=Installerar %d av %d
+installing_package=Installerar %s
+lang_changed_en=Språk ändrat till engelska (UK)
+lang_changed_nb=Språk ändrat till norska (bokmål)
+lang_changed_sv=Språk ändrat till svenska
+tray_scanning=Skannar...
+tray_no_updates=Inga uppdateringar tillgängliga
+tray_one_update=1 uppdatering tillgänglig
+tray_updates_available=uppdateringar tillgängliga
+tray_next_scan=Nästa skanning:
+tray_balloon_updates_title=Uppdateringar tillgängliga
+tray_balloon_one_update=1 uppdatering hittades. Klicka för att visa.
+tray_balloon_multiple_updates=%d uppdateringar hittades. Klicka för att visa.
+tray_balloon_no_updates=Du är uppdaterad!
+about_title=Om WinUpdate
+about_subtitle=Win som i Vinst!
+about_published=Publicerad:
+about_version=Version:
+about_intro=WinUpdate är en applikation som ser till att du håller dig uppdaterad. Den stöder <xx xxx> applikationer från otaliga utvecklare.
+about_modes_intro=Programmet kan köras i tre lägen:
+about_mode1_title=Manuellt
+about_mode1_desc=Du öppnar programmet, och winget (inbyggt i Windows 10 och 11), som programmet använder, letar upp vilka uppdateringar som finns till programmen du har installerade på din maskin. Du väljer vilka du vill installera, eller klickar på "Välj alla" för att installera allt. Sedan klickar du "Uppdatera nu" och programmen du har valt blir uppdaterade till senaste versionen.
+about_mode2_title=Skanna vid Windows start
+about_mode2_desc=Varje gång du startar Windows, gör den en skanning i bakgrunden, och öppnar programmet om några uppdateringar hittas. Annars fungerar programmet också som manuellt läge.
+about_mode3_title=Köra i systemfältet
+about_mode3_desc=Programmet startar vid uppstart och skannar efter uppdateringar, innan det lägger sig i systemfältet (nere till höger, vid klockan), där det skannar efter uppdateringar efter det tidsintervall du har valt i "Inställningar". När den hittar uppdateringar, kommer den att meddela dig genom Windows meddelandesystem. Du kan sedan klicka på ikonen i systemfältet för att öppna programmet och visa/installera uppdateringen(arna).
+about_no_ms_account=Du behöver inte vara inloggad på ditt Microsoft-konto för att använda programmet.
+about_conclusion=Från och med nu kan du vara mer uppdaterad på din dator än du någonsin har varit förut!
+about_license_info=Licens: GPLv2 — visa licens genom att klicka på knappen nere till vänster
+about_description=WinUpdate är en applikation som ser till att du håller dig uppdaterad. Den stöder över 11 000 paket applikationer från otaliga utvecklare.
+
+about_description2=Programmet kan köras i tre lägen:
+
+1: Manuellt
+Du öppnar programmet, och winget (inbyggt i Windows 10 och 11), som programmet använder, letar upp vilka uppdateringar som finns till programmen du har installerade på din maskin. Du väljer vilka du vill installera, eller klickar på "Välj alla" för att installera allt. Sedan klickar du "Uppdatera nu" och programmen du har valt blir uppdaterade till senaste versionen.
+
+2: Skanna vid Windows start
+Varje gång du startar Windows, gör den en skanning i bakgrunden, och öppnar programmet om några uppdateringar hittas. Annars fungerar programmet också som manuellt läge.
+
+3: Köra i systemfältet
+Programmet startar vid uppstart och skannar efter uppdateringar, innan det lägger sig i systemfältet (nere till höger, vid klockan), där det skannar efter uppdateringar efter det tidsintervall du har valt i "Inställningar". När den hittar uppdateringar, kommer den att meddela dig genom Windows meddelandesystem. Du kan sedan klicka på ikonen i systemfältet för att öppna programmet och visa/installera uppdateringen(arna).
+
+Du behöver inte vara inloggad på ditt Microsoft-konto för att använda programmet.
+
+Från och med nu kan du vara mer uppdaterad på din dator än du någonsin har varit förut!
+about_supports=
+about_packages=
+about_author=Författare:
+about_copyleft=Copyleft
+about_license=Licens:
+about_license_name=GNU General Public License v2.0
+about_license_file=se LICENSE.md som följer med denna distribution.
+about_summary=Sammanfattning:
+about_summary_text=Detta program är fri programvara; du kan återdistribuera det och/eller modifiera det under villkoren i GNU General Public License version 2, som publicerad av Free Software Foundation. Detta program distribueras i hopp om att det kommer att vara användbart, men UTAN NÅGON GARANTI; utan ens underförstådd garanti för SÄLJBARHET eller LÄMPLIGHET FÖR ETT VISST ÄNDAMÅL.
+about_attribution=Om du nämner en nyare version eller en fork, vänligen ange författaren som specificerat.
+about_view_license=Visa licens
+about_close=Stäng
+tray_menu_scan=Skanna nu
+tray_menu_open=Öppna huvudfönster
+tray_menu_exit=Avsluta
+skip_confirm_question=Skippa denna uppdatering av <appname>?
+skip_confirm_body=Version <available> kommer inte att visas i uppdateringslistan längre.\nVersionen efter <available> kommer dock att visas.\nDu skippar bara den versionen.
+btn_do_it=Gör det!
+btn_cancel=Avboka
+skip_tooltip=Skippa denna uppdatering av <appname>?
+unskip_tooltip=Klicka på raden och tryck Oskippa för att utföra det

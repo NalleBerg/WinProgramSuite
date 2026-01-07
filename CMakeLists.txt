@@ -73,7 +73,7 @@ if(MSVC)
 endif()
 
 if (WIN32)
-  target_link_libraries(WinUpdate PRIVATE comctl32 shlwapi ole32 oleaut32)
+  target_link_libraries(WinUpdate PRIVATE comctl32 shlwapi ole32 oleaut32 gdiplus)
 endif()
 
 # Build closetray.exe - small utility to close WinUpdate from system tray

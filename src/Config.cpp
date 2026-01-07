@@ -66,7 +66,7 @@ static std::string GetSettingsPath() {
 static std::unordered_map<std::string, std::wstring> LoadTranslations(const std::string &locale) {
     std::unordered_map<std::string, std::wstring> trans;
     
-    // Load translations from i18n file in executable directory
+    // Load translations from locale file in executable directory
     wchar_t exePath[MAX_PATH];
     GetModuleFileNameW(NULL, exePath, MAX_PATH);
     std::wstring exeDir = exePath;
@@ -74,7 +74,7 @@ static std::unordered_map<std::string, std::wstring> LoadTranslations(const std:
     if (lastSlash != std::wstring::npos) {
         exeDir = exeDir.substr(0, lastSlash);
     }
-    std::wstring i18nPathW = exeDir + L"\\i18n\\" + Utf8ToWide(locale) + L".txt";
+    std::wstring i18nPathW = exeDir + L"\\locale\\" + Utf8ToWide(locale) + L".txt";
     
     std::ifstream i18nFile(i18nPathW.c_str());
     if (i18nFile) {

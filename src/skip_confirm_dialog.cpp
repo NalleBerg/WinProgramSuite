@@ -70,16 +70,8 @@ static std::string GetSettingsIniPath() {
 static std::string LoadLocaleSetting() {
     std::string ini = GetSettingsIniPath();
     std::ifstream ifs(ini, std::ios::binary);
-    if (!ifs) {
-        // create default INI with required sections
-        std::ofstream ofs(ini, std::ios::binary);
-        if (ofs) {
-            ofs << "[language]\n";
-            ofs << "en\n\n";
-            ofs << "[skipped]\n";
-        }
-        return std::string("en");
-    }
+    if (!ifs) return std::string("en_GB");
+    
     auto trim = [](std::string &s){ size_t a = s.find_first_not_of(" \t\r\n"); if (a==std::string::npos) { s.clear(); return; } size_t b = s.find_last_not_of(" \t\r\n"); s = s.substr(a, b-a+1); };
     std::string line;
     bool inLang = false;
@@ -91,13 +83,13 @@ static std::string LoadLocaleSetting() {
             inLang = (line == "[language]");
             continue;
         }
-        if (inLang) return line;
+        if (inLang) return line; // Return full locale code (en_GB, nb_NO, sv_SE)
     }
-    return std::string();
+    return std::string("en_GB");
 }
 
 static std::string LoadI18nValue(const std::string &locale, const std::string &key) {
-    std::string fn = std::string("i18n/") + locale + ".txt";
+    std::string fn = std::string("locale/") + locale + ".txt";
     std::string txt = ReadFileToString(fn);
     if (txt.empty()) return std::string();
     std::istringstream iss(txt);
@@ -127,8 +119,8 @@ bool ShowSkipConfirm(HWND parent, const std::wstring &appname, const std::wstrin
     AppendLog("[skip_confirm] ShowSkipConfirm entered\n");
     std::string locale = LoadLocaleSetting(); if (locale.empty()) locale = "en_GB";
 
-    // load templates from i18n; fall back to existing common keys if present
-    // i18n files already contain `skip_confirm_question` and `skip_confirm_body` plus `btn_do_it`/`btn_cancel`.
+    // load templates from locale; fall back to existing common keys if present
+    // locale files already contain `skip_confirm_question` and `skip_confirm_body` plus `btn_do_it`/`btn_cancel`.
     std::string question_t = LoadI18nValue(locale, "skip_confirm_question");
     std::string body_t = LoadI18nValue(locale, "skip_confirm_body");
     std::string btn_ok_t = LoadI18nValue(locale, "btn_do_it");
@@ -267,6 +259,12 @@ bool ShowSkipConfirm(HWND parent, const std::wstring &appname, const std::wstrin
         }
         // read result (set by window proc)
         bool res = (result == 1);
+        // Bring main window to front if cancelled
+        if (!res && parent) {
+            SetForegroundWindow(parent);
+            BringWindowToTop(parent);
+            SetActiveWindow(parent);
+        }
         // DON'T send WM_COPYDATA here - it will be handled by the caller
         // This avoids the freeze caused by triggering refresh from within modal loop
         return res;
