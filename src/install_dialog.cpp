@@ -552,6 +552,9 @@ bool ShowInstallDialog(HWND hParent, const std::vector<std::string>& packageIds,
         // Add output redirection to temp file
         cmdLine += L" > \"" + outputFile + L"\" 2>&1";
         
+        // Build full cmd.exe parameters (must persist for ShellExecuteExW)
+        std::wstring cmdParams = L"/C " + cmdLine;
+        
         // Run winget_helper.exe elevated with UAC (single prompt)
         SHELLEXECUTEINFOW sei{};
         sei.cbSize = sizeof(sei);
@@ -559,12 +562,16 @@ bool ShowInstallDialog(HWND hParent, const std::vector<std::string>& packageIds,
         sei.hwnd = hwnd;
         sei.lpVerb = L"runas";
         sei.lpFile = L"cmd.exe";
-        sei.lpParameters = (L"/C " + cmdLine).c_str();
+        sei.lpParameters = cmdParams.c_str();
         sei.nShow = SW_HIDE;
         
         if (!ShellExecuteExW(&sei) || !sei.hProcess) {
             // User cancelled UAC or elevation failed
-            SendMessageW(hStatus, WM_SETTEXT, 0, (LPARAM)L"Installation cancelled or failed to elevate");
+            DWORD err = GetLastError();
+            wchar_t errMsg[512];
+            swprintf(errMsg, 512, L"Installation cancelled or failed (error %lu)", err);
+            SendMessageW(hStatus, WM_SETTEXT, 0, (LPARAM)errMsg);
+            AppendFormattedText(hOut, std::wstring(L"Error: ") + errMsg + L"\r\n", true, RGB(255, 0, 0));
             EnableWindow(hDone, TRUE);
             DeleteFileW(outputFile.c_str());
             return;
