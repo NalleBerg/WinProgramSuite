@@ -518,11 +518,8 @@ bool ShowInstallDialog(HWND hParent, const std::vector<std::string>& packageIds,
     
     // Start winget_helper in background thread with UAC elevation
     std::thread([hwnd, hOut, hProg, hStatus, hDone, hAnim, hOverallStatus, packageIds]() {
-        // Update status to show starting
-        wchar_t startBuf[256];
-        swprintf(startBuf, 256, t("install_progress").c_str(), 1, (int)packageIds.size());
-        std::wstring startStatus = startBuf;
-        SendMessageW(hOverallStatus, WM_SETTEXT, 0, (LPARAM)startStatus.c_str());
+        // Update status to show preparing
+        SetWindowTextW(hStatus, t("install_preparing").c_str());
         
         // Start with progress bar visible (for download phase), animation hidden
         ShowWindow(hProg, SW_SHOW);
@@ -612,6 +609,8 @@ bool ShowInstallDialog(HWND hParent, const std::vector<std::string>& packageIds,
         // Read output from pipe progressively while process runs
         int timeoutCounter = 0;
         const int TIMEOUT_LIMIT = 600; // 5 minutes (600 * 500ms)
+        int completedPackages = 0;
+        std::wstring currentPackageId;
         
         while (true) {
             DWORD waitResult = WaitForSingleObject(sei.hProcess, 100);
@@ -635,6 +634,39 @@ bool ShowInstallDialog(HWND hParent, const std::vector<std::string>& packageIds,
                 std::wstring wtext = Utf8ToWide(std::string(buffer, bytesRead));
                 if (!wtext.empty()) {
                     AppendFormattedText(hOut, wtext, false, RGB(0, 0, 0));
+                    
+                    // Parse output for progress tracking
+                    // Look for "[X/Y] PackageId" lines
+                    size_t bracketPos = wtext.find(L"[");
+                    if (bracketPos != std::wstring::npos) {
+                        size_t slashPos = wtext.find(L"/", bracketPos);
+                        size_t closeBracket = wtext.find(L"]", slashPos);
+                        if (slashPos != std::wstring::npos && closeBracket != std::wstring::npos) {
+                            // Extract package ID after the bracket
+                            size_t pkgStart = closeBracket + 1;
+                            while (pkgStart < wtext.length() && iswspace(wtext[pkgStart])) pkgStart++;
+                            size_t pkgEnd = wtext.find(L"\r", pkgStart);
+                            if (pkgEnd == std::wstring::npos) pkgEnd = wtext.find(L"\n", pkgStart);
+                            if (pkgEnd != std::wstring::npos) {
+                                currentPackageId = wtext.substr(pkgStart, pkgEnd - pkgStart);
+                                // Update status
+                                SendMessageW(hStatus, WM_SETTEXT, 0, (LPARAM)currentPackageId.c_str());
+                            }
+                        }
+                    }
+                    
+                    // Look for success/fail markers
+                    if (wtext.find(L"✓ Success") != std::wstring::npos || wtext.find(L"✗ Failed") != std::wstring::npos) {
+                        completedPackages++;
+                        // Update progress bar
+                        int progress = (completedPackages * 100) / (int)packageIds.size();
+                        SendMessageW(hProg, PBM_SETPOS, progress, 0);
+                        
+                        // Update overall status
+                        wchar_t progBuf[256];
+                        swprintf(progBuf, 256, t("install_progress").c_str(), completedPackages, (int)packageIds.size());
+                        SendMessageW(hOverallStatus, WM_SETTEXT, 0, (LPARAM)progBuf);
+                    }
                 }
             }
             
@@ -646,8 +678,14 @@ bool ShowInstallDialog(HWND hParent, const std::vector<std::string>& packageIds,
         
         // Hide animation, show completion
         ShowWindow(hAnim, SW_HIDE);
-        SetWindowTextW(hStatus, L"Installation complete!");
+        SendMessageW(hProg, PBM_SETPOS, 100, 0);
+        SetWindowTextW(hStatus, t("install_complete").c_str());
         EnableWindow(hDone, TRUE);
+        
+        // Update overall status to show completion
+        wchar_t completeBuf[256];
+        swprintf(completeBuf, 256, t("install_progress").c_str(), (int)packageIds.size(), (int)packageIds.size());
+        SendMessageW(hOverallStatus, WM_SETTEXT, 0, (LPARAM)completeBuf);
         
         // Append completion message in bold
         std::wstring completionMsg = L"\r\n\r\n=== Installation Complete ===\r\n";

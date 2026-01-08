@@ -36,6 +36,7 @@ config_btn_ok=OK
 config_btn_cancel=Avboka
 install_dialog_title=Installerar uppdateringar
 install_preparing=Förbereder...
+install_complete=Installation slutförd!
 install_of=av
 install_progress=Installerar %d av %d
 downloading_package=Laddar ner %s...

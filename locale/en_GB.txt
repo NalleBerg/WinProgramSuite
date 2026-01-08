@@ -35,6 +35,7 @@ config_btn_ok=OK
 config_btn_cancel=Cancel
 install_dialog_title=Installing Updates
 install_preparing=Preparing...
+install_complete=Installation complete!
 install_of=of
 install_progress=Installing %d of %d
 downloading_package=Downloading %s...

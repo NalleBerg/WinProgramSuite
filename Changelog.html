@@ -1,6 +1,6 @@
 <h3 style="text-align: center;">&nbsp;</h3>
 <h3 style="text-align: center;"><span style="color: #ff0000;">Version 2026.01.08</span></h3>
-<p><strong>New in this version (08 January 2026, 08:00 GMT+1):</strong></p>
+<p><strong>New in this version (08 January 2026, 20:00 GMT+1):</strong></p>
 <ul>
 <li><strong>Windows Defender False Positive Mitigation:</strong> Added security compiler flags (ASLR, DEP, high-entropy ASLR) to reduce false positive detections</li>
 <li><strong>Enhanced Executable Metadata:</strong> Comprehensive version information with company name, copyright, and product details embedded in executable</li>
@@ -10,6 +10,10 @@
 <li><strong>Comprehensive Security Documentation:</strong> Created DEFENDER_SOLUTIONS.md with detailed instructions for handling antivirus false positives</li>
 <li><strong>Installation Dialog Repair:</strong> Created winget_helper.exe that captures all winget output including progress bars, download percentages, and status information in real-time</li>
 <li><strong>Single UAC Elevation:</strong> One UAC prompt installs all selected packages via helper architecture (restored from previous working implementation)</li>
+<li><strong>Installation Progress Tracking:</strong> Progress bar updates from 0% to 100% as packages are processed, status text shows current package name</li>
+<li><strong>Installation Status Workflow:</strong> Clear status transitions: "Preparing..." → package names → "Installation complete!" with progress percentage</li>
+<li><strong>"System Updated" Dialog Fix:</strong> Now correctly shows when all available updates are skipped (counts non-skipped packages instead of total)</li>
+<li><strong>System Tray Visibility Fix:</strong> "Your system is updated" dialog now appears when window is visible, regardless of system tray mode</li>
 <li><strong>Version Update:</strong> Application version updated to 2026.01.08.08</li>
 </ul>
 

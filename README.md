@@ -1,6 +1,6 @@
 # WinUpdate — Friendly winget GUI
 
-**Version 2026.01.08** | **Published:** 08 January 2026
+**Version 2026.01.08** | **Published:** 08 January 2026 20:00 GMT+1
 
 **WinUpdate** is a lightweight, native Windows GUI application that makes managing software updates easy through Microsoft's `winget` package manager. No more cryptic command lines — just a clean interface to keep your Windows applications up to date.
 
@@ -14,7 +14,8 @@
 - **🌍 Multi-Language Support** — English (GB), Norwegian (Bokmål), and Swedish built-in
 - **🎨 Clean UI** — Modern Windows interface with hyperlinks and visual feedback
 - **🔐 Single UAC Prompt** — One elevation for all updates (not one per package)
-- **� Install Dialog** — Animated progress dialog with real-time output during installation
+- **📦 Install Dialog** — Real-time output with progress bars, download percentages, and status tracking
+- **📊 Progress Tracking** — Visual progress bar updates from 0% to 100% as packages install
 - **🔔 System Tray Mode** — Run in background with automatic periodic scanning
 - **🚀 Startup Integration** — Automatic shortcut management with verification and self-healing
 - **⚙️ Three Configuration Modes:**

@@ -1,6 +1,6 @@
 <h3 style="text-align: center;">&nbsp;</h3>
 <h3 style="text-align: center;"><span style="color: #ff0000;">Version 2026.01.08</span></h3>
-<p><strong>Nytt i denna version (08 januari 2026, 08:00 GMT+1):</strong></p>
+<p><strong>Nytt i denna version (08 januari 2026, 20:00 GMT+1):</strong></p>
 <ul>
 <li><strong>Windows Defender falsk positiv-reducering:</strong> Lade till säkerhetskompileringsflaggor (ASLR, DEP, hög-entropi ASLR) för att minska falska positiva detektioner</li>
 <li><strong>Förbättrad körbar metadata:</strong> Omfattande versionsinformation med företagsnamn, upphovsrätt och produktdetaljer inbäddad i körbar fil</li>
@@ -10,6 +10,10 @@
 <li><strong>Omfattande säkerhetsdokumentation:</strong> Skapade DEFENDER_SOLUTIONS.md med detaljerade instruktioner för hantering av antivirusfalska positiver</li>
 <li><strong>Installationsdialogreparation:</strong> Skapade winget_helper.exe som fångar all winget-utmatning inklusive förloppsindikator, nedladdningsprocent och statusinformation i realtid</li>
 <li><strong>Enkel UAC-upphöjning:</strong> En enda UAC-prompt installerar alla valda paket via hjälparkitekturen (återställd från tidigare fungerande implementation)</li>
+<li><strong>Installationsförloppsspårning:</strong> Förloppsindikator uppdateras från 0% till 100% när paket bearbetas, statustext visar aktuellt paketnamn</li>
+<li><strong>Installationsstatusarbetsflöde:</strong> Tydliga statusövergångar: "Förbereder..." → paketnamn → "Installation slutförd!" med förloppsprocent</li>
+<li><strong>"System uppdaterat" dialogfixering:</strong> Visar nu korrekt när alla tillgängliga uppdateringar är skippade (räknar icke-skippade paket istället för totalt)</li>
+<li><strong>Systemfältsynlighetsfix:</strong> "Ditt system är uppdaterat" dialog visas nu när fönstret är synligt, oavsett systemfältläge</li>
 <li><strong>Versionsuppdatering:</strong> Applikationsversion uppdaterad till 2026.01.08.08</li>
 </ul>
 

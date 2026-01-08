@@ -2194,13 +2194,21 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
         if (hBtnUpgrade) EnableWindow(hBtnUpgrade, TRUE);
         EnableWindow(GetDlgItem(hwnd, IDC_BTN_SELECTALL), TRUE);
         EnableWindow(GetDlgItem(hwnd, IDC_COMBO_LANG), TRUE);
-        // If the refresh produced no parsed packages, show an 'up-to-date' dialog
+        // If the refresh produced no non-skipped packages, show an 'up-to-date' dialog
         {
             std::lock_guard<std::mutex> lk(g_packages_mutex);
-            if (g_packages.empty()) {
+            // Count non-skipped packages
+            int nonSkippedCount = 0;
+            for (const auto& pkg : g_packages) {
+                if (g_skipped_versions.find(pkg.first) == g_skipped_versions.end()) {
+                    nonSkippedCount++;
+                }
+            }
+            
+            if (nonSkippedCount == 0) {
                 // Only show the 'up-to-date' popup if this was a manual refresh (user requested)
-                // and not running in system tray mode (where balloon notification is shown instead).
-                if (wParam && (!g_systemTray || !g_systemTray->IsActive())) {
+                // If window is visible, show dialog. If hidden in tray, balloon will be shown later.
+                if (wParam && IsWindowVisible(hwnd)) {
                     std::wstring msg = t("your_system_updated");
                     MessageBoxW(hwnd, msg.c_str(), L"WinUpdate", MB_OK | MB_ICONINFORMATION);
                 }

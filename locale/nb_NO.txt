@@ -36,6 +36,7 @@ config_btn_ok=OK
 config_btn_cancel=Avbryt
 install_dialog_title=Installerer oppdateringer
 install_preparing=Forbereder...
+install_complete=Installasjon fullført!
 install_of=av
 install_progress=Installerer %d av %d
 downloading_package=Laster ned %s...
