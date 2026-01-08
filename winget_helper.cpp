@@ -1,43 +1,68 @@
-// Simple helper to run winget commands with elevation (single UAC prompt)
-// Outputs all winget output to a file specified as first argument
+// Helper to run winget commands with elevation (single UAC prompt)
+// Outputs via named pipe for in-memory IPC with parent process
 #include <windows.h>
-#include <iostream>
 #include <string>
 #include <vector>
-#include <fstream>
 
-int wmain(int argc, wchar_t* argv[]) {
+// Write to pipe helper
+void WriteToPipe(HANDLE hPipe, const std::wstring& text) {
+    if (!hPipe || hPipe == INVALID_HANDLE_VALUE) return;
+    
+    // Convert wide to UTF-8
+    int needed = WideCharToMultiByte(CP_UTF8, 0, text.c_str(), -1, NULL, 0, NULL, NULL);
+    if (needed <= 0) return;
+    
+    std::string utf8(needed, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, text.c_str(), -1, &utf8[0], needed, NULL, NULL);
+    
+    DWORD written;
+    WriteFile(hPipe, utf8.c_str(), (DWORD)utf8.length(), &written, NULL);
+}
+
+int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR lpCmdLine, int) {
+    // Parse command line manually (first arg is pipe name, rest are package IDs)
+    int argc;
+    wchar_t** argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    
     if (argc < 3) {
-        std::wcerr << L"Usage: winget_helper.exe <output_file> <package_id1> [package_id2] ..." << std::endl;
+        // Not enough arguments
         return 1;
     }
-
-    // First argument is the output file
-    std::wstring outputFile = argv[1];
+    
+    // First argument is the pipe name
+    std::wstring pipeName = argv[1];
     
     // Collect all package IDs from remaining arguments
     std::vector<std::wstring> packageIds;
     for (int i = 2; i < argc; i++) {
         packageIds.push_back(argv[i]);
     }
-
-    // Open output file for writing
-    std::wofstream outFile(outputFile.c_str(), std::ios::out | std::ios::trunc);
-    if (!outFile) {
-        std::wcerr << L"Failed to open output file: " << outputFile << std::endl;
+    
+    LocalFree(argv);
+    
+    // Connect to the named pipe created by parent process
+    HANDLE hPipe = CreateFileW(
+        pipeName.c_str(),
+        GENERIC_WRITE,
+        0,
+        NULL,
+        OPEN_EXISTING,
+        0,
+        NULL
+    );
+    
+    if (hPipe == INVALID_HANDLE_VALUE) {
         return 1;
     }
-
-    outFile << L"WinUpdate Helper - Installing " << packageIds.size() << L" package(s)" << std::endl;
-    outFile << L"========================================" << std::endl << std::endl;
-    outFile.flush();
+    
+    WriteToPipe(hPipe, L"WinUpdate Helper - Installing " + std::to_wstring(packageIds.size()) + L" package(s)\r\n");
+    WriteToPipe(hPipe, L"========================================\r\n\r\n");
 
     int successCount = 0;
     int failCount = 0;
 
     for (size_t i = 0; i < packageIds.size(); i++) {
-        outFile << L"[" << (i+1) << L"/" << packageIds.size() << L"] " << packageIds[i] << std::endl;
-        outFile.flush();
+        WriteToPipe(hPipe, L"[" + std::to_wstring(i+1) + L"/" + std::to_wstring(packageIds.size()) + L"] " + packageIds[i] + L"\r\n");
         
         // Build winget command
         std::wstring cmd = L"winget.exe upgrade --id \"" + packageIds[i] + 
@@ -51,8 +76,7 @@ int wmain(int argc, wchar_t* argv[]) {
         sa.lpSecurityDescriptor = NULL;
         
         if (!CreatePipe(&hReadPipe, &hWritePipe, &sa, 0)) {
-            outFile << L"Failed to create pipe" << std::endl;
-            outFile.flush();
+            WriteToPipe(hPipe, L"Failed to create pipe\r\n");
             failCount++;
             continue;
         }
@@ -69,8 +93,7 @@ int wmain(int argc, wchar_t* argv[]) {
         PROCESS_INFORMATION pi{};
         
         if (!CreateProcessW(NULL, (LPWSTR)cmd.c_str(), NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
-            outFile << L"Failed to start winget" << std::endl;
-            outFile.flush();
+            WriteToPipe(hPipe, L"Failed to start winget\r\n");
             CloseHandle(hWritePipe);
             CloseHandle(hReadPipe);
             failCount++;
@@ -79,18 +102,17 @@ int wmain(int argc, wchar_t* argv[]) {
         
         CloseHandle(hWritePipe);
         
-        // Read and forward output to file
+        // Read and forward output to pipe
         char buffer[4096];
         DWORD bytesRead;
         while (ReadFile(hReadPipe, buffer, sizeof(buffer)-1, &bytesRead, NULL) && bytesRead > 0) {
             buffer[bytesRead] = '\0';
-            // Convert UTF-8 to wide and write to file
+            // Convert UTF-8 to wide and write to pipe
             int needed = MultiByteToWideChar(CP_UTF8, 0, buffer, bytesRead, NULL, 0);
             if (needed > 0) {
                 std::wstring wbuffer(needed, L'\0');
                 MultiByteToWideChar(CP_UTF8, 0, buffer, bytesRead, &wbuffer[0], needed);
-                outFile << wbuffer;
-                outFile.flush();
+                WriteToPipe(hPipe, wbuffer);
             }
         }
         
@@ -105,20 +127,19 @@ int wmain(int argc, wchar_t* argv[]) {
         
         if (exitCode == 0) {
             successCount++;
-            outFile << L"✓ Success" << std::endl;
+            WriteToPipe(hPipe, L"✓ Success\r\n");
         } else {
             failCount++;
-            outFile << L"✗ Failed (exit code: " << exitCode << L")" << std::endl;
+            WriteToPipe(hPipe, L"✗ Failed (exit code: " + std::to_wstring(exitCode) + L")\r\n");
         }
-        outFile << std::endl;
-        outFile.flush();
+        WriteToPipe(hPipe, L"\r\n");
     }
 
-    outFile << L"========================================" << std::endl;
-    outFile << L"=== Installation Complete ===" << std::endl;
-    outFile << successCount << L" package(s) processed." << std::endl;
-    outFile.flush();
-    outFile.close();
+    WriteToPipe(hPipe, L"========================================\r\n");
+    WriteToPipe(hPipe, L"=== Installation Complete ===\r\n");
+    WriteToPipe(hPipe, std::to_wstring(successCount) + L" package(s) processed.\r\n");
+    
+    CloseHandle(hPipe);
     
     return (failCount > 0) ? 1 : 0;
 }

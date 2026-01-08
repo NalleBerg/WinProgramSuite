@@ -92,9 +92,9 @@ endif()
 
 # Build winget_helper.exe - elevated helper for running winget commands
 if(EXISTS ${CMAKE_SOURCE_DIR}/winget_helper.cpp)
-  add_executable(winget_helper winget_helper.cpp)
+  add_executable(winget_helper WIN32 winget_helper.cpp)
   set_target_properties(winget_helper PROPERTIES
-    WIN32_EXECUTABLE FALSE  # Console application
+    WIN32_EXECUTABLE TRUE  # GUI application (no console window)
     LINK_FLAGS "-municode"
   )
 endif()

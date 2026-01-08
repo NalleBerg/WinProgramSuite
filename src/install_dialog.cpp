@@ -516,13 +516,8 @@ bool ShowInstallDialog(HWND hParent, const std::vector<std::string>& packageIds,
     std::wstring initialStatus = initialBuf;
     SendMessageW(hOverallStatus, WM_SETTEXT, 0, (LPARAM)initialStatus.c_str());
     
-    // Generate unique temp file for output
-    wchar_t tempPath[MAX_PATH];
-    GetTempPathW(MAX_PATH, tempPath);
-    std::wstring outputFile = std::wstring(tempPath) + L"winupdate_output_" + std::to_wstring(GetTickCount()) + L".txt";
-    
     // Start winget_helper in background thread with UAC elevation
-    std::thread([hwnd, hOut, hProg, hStatus, hDone, hAnim, hOverallStatus, packageIds, outputFile]() {
+    std::thread([hwnd, hOut, hProg, hStatus, hDone, hAnim, hOverallStatus, packageIds]() {
         // Update status to show starting
         wchar_t startBuf[256];
         swprintf(startBuf, 256, t("install_progress").c_str(), 1, (int)packageIds.size());
@@ -532,6 +527,27 @@ bool ShowInstallDialog(HWND hParent, const std::vector<std::string>& packageIds,
         // Start with progress bar visible (for download phase), animation hidden
         ShowWindow(hProg, SW_SHOW);
         ShowWindow(hAnim, SW_HIDE);
+        
+        // Create a unique named pipe for IPC (in-memory communication)
+        std::wstring pipeName = L"\\\\.\\pipe\\WinUpdate_" + std::to_wstring(GetCurrentProcessId()) + L"_" + std::to_wstring(GetTickCount());
+        
+        HANDLE hPipe = CreateNamedPipeW(
+            pipeName.c_str(),
+            PIPE_ACCESS_INBOUND,
+            PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
+            1,
+            65536,
+            65536,
+            0,
+            NULL
+        );
+        
+        if (hPipe == INVALID_HANDLE_VALUE) {
+            SendMessageW(hStatus, WM_SETTEXT, 0, (LPARAM)L"Failed to create pipe");
+            AppendFormattedText(hOut, L"Error: Failed to create named pipe\r\n", true, RGB(255, 0, 0));
+            EnableWindow(hDone, TRUE);
+            return;
+        }
         
         // Get the path to winget_helper.exe (same directory as WinUpdate.exe)
         wchar_t exePath[MAX_PATH];
@@ -543,14 +559,14 @@ bool ShowInstallDialog(HWND hParent, const std::vector<std::string>& packageIds,
         }
         std::wstring helperPath = exeDir + L"\\winget_helper.exe";
         
-        // Build parameters: output file first, then all package IDs
-        std::wstring helperParams = L"\"" + outputFile + L"\"";
+        // Build parameters: pipe name first, then all package IDs
+        std::wstring helperParams = L"\"" + pipeName + L"\"";
         for (const auto& pkgId : packageIds) {
             helperParams += L" \"" + Utf8ToWide(pkgId) + L"\"";
         }
         
         // Run winget_helper.exe elevated with UAC (single prompt)
-        // Launch directly without cmd.exe - helper writes to file directly
+        // It's a GUI app so no console window will appear
         SHELLEXECUTEINFOW sei{};
         sei.cbSize = sizeof(sei);
         sei.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
@@ -568,20 +584,37 @@ bool ShowInstallDialog(HWND hParent, const std::vector<std::string>& packageIds,
             SendMessageW(hStatus, WM_SETTEXT, 0, (LPARAM)errMsg);
             AppendFormattedText(hOut, std::wstring(L"Error: ") + errMsg + L"\r\n", true, RGB(255, 0, 0));
             EnableWindow(hDone, TRUE);
-            DeleteFileW(outputFile.c_str());
+            CloseHandle(hPipe);
             return;
         }
         
-        // Read output file progressively while process runs
-        std::string currentPhase;
-        std::string currentPackage;
-        int packageIndex = 0;
-        std::streampos lastPos = 0;
+        // Wait for helper to connect to the pipe (non-blocking with timeout)
+        DWORD pipeMode = PIPE_NOWAIT;
+        SetNamedPipeHandleState(hPipe, &pipeMode, NULL, NULL);
+        
+        bool connected = false;
+        for (int i = 0; i < 50; i++) {  // Wait up to 5 seconds
+            if (ConnectNamedPipe(hPipe, NULL) || GetLastError() == ERROR_PIPE_CONNECTED) {
+                connected = true;
+                break;
+            }
+            Sleep(100);
+        }
+        
+        if (!connected) {
+            AppendFormattedText(hOut, L"Helper failed to connect\r\n", true, RGB(255, 0, 0));
+            CloseHandle(hPipe);
+            CloseHandle(sei.hProcess);
+            EnableWindow(hDone, TRUE);
+            return;
+        }
+        
+        // Read output from pipe progressively while process runs
         int timeoutCounter = 0;
         const int TIMEOUT_LIMIT = 600; // 5 minutes (600 * 500ms)
         
         while (true) {
-            DWORD waitResult = WaitForSingleObject(sei.hProcess, 500);
+            DWORD waitResult = WaitForSingleObject(sei.hProcess, 100);
             
             timeoutCounter++;
             if (timeoutCounter > TIMEOUT_LIMIT) {
@@ -592,71 +625,24 @@ bool ShowInstallDialog(HWND hParent, const std::vector<std::string>& packageIds,
                 break;
             }
             
-            // Try to read new content from output file
-            std::ifstream outFile(outputFile.c_str(), std::ios::binary);
-            if (outFile) {
-                outFile.seekg(lastPos);
-                std::string newContent;
-                std::getline(outFile, newContent, '\0');
-                lastPos = outFile.tellg();
-                outFile.close();
+            // Read from named pipe
+            char buffer[4096];
+            DWORD bytesRead;
+            while (ReadFile(hPipe, buffer, sizeof(buffer)-1, &bytesRead, NULL) && bytesRead > 0) {
+                buffer[bytesRead] = '\0';
                 
-                if (!newContent.empty()) {
-                    // Split on BOTH \n and \r to see all winget progress lines
-                    std::vector<std::string> lines;
-                    std::string currentLine;
-                    for (char c : newContent) {
-                        if (c == '\n' || c == '\r') {
-                            if (!currentLine.empty()) {
-                                lines.push_back(currentLine);
-                                currentLine.clear();
-                            }
-                        } else {
-                            currentLine += c;
-                        }
-                    }
-                    if (!currentLine.empty()) {
-                        lines.push_back(currentLine);
-                    }
-                    
-                    // Display all output
-                    for (const auto& line : lines) {
-                        if (!line.empty()) {
-                            std::wstring wline = Utf8ToWide(line) + L"\r\n";
-                            AppendFormattedText(hOut, wline, false, RGB(0, 0, 0));
-                        }
-                    }
+                // Convert UTF-8 to wide and display
+                std::wstring wtext = Utf8ToWide(std::string(buffer, bytesRead));
+                if (!wtext.empty()) {
+                    AppendFormattedText(hOut, wtext, false, RGB(0, 0, 0));
                 }
             }
             
             if (waitResult == WAIT_OBJECT_0) break;
         }
         
+        CloseHandle(hPipe);
         CloseHandle(sei.hProcess);
-        
-        // Read any remaining output
-        std::ifstream finalFile(outputFile.c_str(), std::ios::binary);
-        if (finalFile) {
-            finalFile.seekg(lastPos);
-            std::string remaining((std::istreambuf_iterator<char>(finalFile)), std::istreambuf_iterator<char>());
-            if (!remaining.empty()) {
-                std::istringstream iss(remaining);
-                std::string line;
-                while (std::getline(iss, line)) {
-                    if (!line.empty() && line.back() == '\r') {
-                        line.pop_back();
-                    }
-                    if (!line.empty()) {
-                        std::wstring wline = Utf8ToWide(line) + L"\r\n";
-                        AppendFormattedText(hOut, wline, false, RGB(0, 0, 0));
-                    }
-                }
-            }
-            finalFile.close();
-        }
-        
-        // Clean up temp file
-        DeleteFileW(outputFile.c_str());
         
         // Hide animation, show completion
         ShowWindow(hAnim, SW_HIDE);
