@@ -5,14 +5,15 @@
 #include <string>
 #include <sstream>
 #include <shlobj.h>
+#include <atomic>
 #include <gdiplus.h>
 #pragma comment(lib, "gdiplus.lib")
 
 using namespace Gdiplus;
 
 // Version info
-const wchar_t ABOUT_PUBLISHED[] = L"2026-01-06";
-const wchar_t ABOUT_VERSION[] = L"2026.01.06.13";
+const wchar_t ABOUT_PUBLISHED[] = L"07-01-2026";
+const wchar_t ABOUT_VERSION[] = L"2026.01.07.11";
 
 // External i18n function
 extern std::wstring t(const char *key);
@@ -68,10 +69,12 @@ void AppendRichText(HWND hEdit, const std::wstring& text, bool bold, COLORREF co
     }
 }
 
-// Get winget package count
+// Get winget package count (from last scan)
+extern std::atomic<int> g_total_winget_packages;
+
 int GetWingetPackageCount() {
-    // Just return the fallback - querying takes too long for About dialog
-    return 11107;
+    // Return the count from the last scan (updated during winget upgrade)
+    return g_total_winget_packages.load();
 }
 
 std::wstring FormatNumber(int num, bool useComma) {
@@ -227,10 +230,10 @@ void ShowAboutDialog(HWND parent) {
     
     // Version info divider
     AppendRichText(hEdit, L"═════════════════════════════\r\n", false, RGB(100, 140, 180), 9, true);
-    AppendRichText(hEdit, t("about_published") + L" ", true, RGB(0, 0, 0), 9, false);
-    AppendRichText(hEdit, std::wstring(ABOUT_PUBLISHED) + L"\r\n", false, RGB(0, 0, 0), 9, false);
-    AppendRichText(hEdit, t("about_version") + L" ", true, RGB(0, 0, 0), 9, false);
-    AppendRichText(hEdit, std::wstring(ABOUT_VERSION) + L"\r\n", false, RGB(0, 0, 0), 9, false);
+    AppendRichText(hEdit, t("about_published") + L" ", true, RGB(0, 0, 0), 9, true);
+    AppendRichText(hEdit, std::wstring(ABOUT_PUBLISHED) + L"\r\n", false, RGB(0, 0, 0), 9, true);
+    AppendRichText(hEdit, t("about_version") + L" ", true, RGB(0, 0, 0), 9, true);
+    AppendRichText(hEdit, std::wstring(ABOUT_VERSION) + L"\r\n", false, RGB(0, 0, 0), 9, true);
     AppendRichText(hEdit, L"═════════════════════════════\r\n\r\n", false, RGB(100, 140, 180), 9, true);
     
     // Main description with dynamic package count

@@ -95,6 +95,7 @@ extern std::atomic<bool> g_refresh_in_progress;
 static std::set<std::string> g_not_applicable_ids;
 // per-locale skipped versions: id -> version
 static std::unordered_map<std::string,std::string> g_skipped_versions;
+static std::atomic<int> g_total_winget_packages{11107}; // Updated during each scan
 static HFONT g_hListFont = NULL;
 static std::vector<std::wstring> g_colHeaders;
 static std::unordered_map<std::string,std::string> g_last_avail_versions;
@@ -2096,6 +2097,30 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                 std::lock_guard<std::mutex> lk(g_last_winget_raw_mutex);
                 g_last_winget_raw = out;
                 AppendLog(std::string("WM_REFRESH_ASYNC: stored winget output in memory, size=") + std::to_string((int)out.size()) + "\n");
+                
+                // Count total packages from output (lines between separator and "upgrades available")
+                std::istringstream iss(out);
+                std::string line;
+                int count = 0;
+                bool foundSeparator = false;
+                while (std::getline(iss, line)) {
+                    if (!foundSeparator && line.find("----") != std::string::npos) {
+                        foundSeparator = true;
+                        continue;
+                    }
+                    if (foundSeparator) {
+                        if (line.find("upgrades available") != std::string::npos) break;
+                        // Count non-empty lines that likely contain package data
+                        std::string trimmed = line;
+                        while (!trimmed.empty() && (trimmed.back() == '\r' || trimmed.back() == '\n' || isspace((unsigned char)trimmed.back()))) trimmed.pop_back();
+                        while (!trimmed.empty() && isspace((unsigned char)trimmed.front())) trimmed.erase(trimmed.begin());
+                        if (!trimmed.empty()) count++;
+                    }
+                }
+                if (count > 0) {
+                    g_total_winget_packages = count;
+                    AppendLog(std::string("Total winget packages detected: ") + std::to_string(count) + "\n");
+                }
             }
             if (!out.empty()) {
                 // Prefer the in-memory parser chain to extract Id/Name pairs

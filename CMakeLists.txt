@@ -74,6 +74,12 @@ endif()
 
 if (WIN32)
   target_link_libraries(WinUpdate PRIVATE comctl32 shlwapi ole32 oleaut32 gdiplus)
+  # Add security flags to reduce false positives from Windows Defender
+  target_link_options(WinUpdate PRIVATE
+    -Wl,--dynamicbase    # Enable ASLR (Address Space Layout Randomization)
+    -Wl,--nxcompat       # Enable DEP (Data Execution Prevention)
+    -Wl,--high-entropy-va # Enable 64-bit ASLR
+  )
 endif()
 
 # Build closetray.exe - small utility to close WinUpdate from system tray

@@ -10,7 +10,8 @@ id_col=Id
 current_col=Installed
 available_col=Available
 skip_col=Skip
-unskip_btn=Unskipunskip=Unskiploading_title=Loading please wait...
+unskip_btn=Unskip
+unskip=Unskiploading_title=Loading please wait...
 loading_desc=Querying winget
 your_system_updated=Your system is updated!
 no_packages_selected=Please select at least one package to install.
@@ -23,7 +24,7 @@ config_mode_manual=Manual
 config_mode_startup=Scan at Windows startup
 config_mode_systray=Run in the system tray
 config_polling_startup=At startup
-config_polling_hours=Every %d hours
+config_polling_hours=Scan for updates every %d hours
 config_status_manual=Manual mode: program only runs when you start it.
 config_status_startup_only=Startup mode: scan at Windows startup.
 config_status_systray_startup=System tray mode: scan at startup, then at intervals.
