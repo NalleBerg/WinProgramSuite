@@ -1,0 +1,8 @@
+=== Helper started ===
+Command line: exists
+Argc: 4
+Arg[0]: exists
+Arg[1]: exists
+Arg[2]: exists
+Arg[3]: exists
+Connected to pipe successfully

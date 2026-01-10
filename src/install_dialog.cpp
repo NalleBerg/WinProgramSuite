@@ -550,11 +550,17 @@ static LRESULT CALLBACK InstallDlgProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPAR
     }
     case WM_COMMAND:
         if (LOWORD(wParam) == 1001) {
-            // Done button clicked - bring window to foreground then destroy
-            SetForegroundWindow(hwnd);
-            BringWindowToTop(hwnd);
-            SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+            // Done button clicked - bring parent window to front then destroy this dialog
+            HWND hParent = GetParent(hwnd);
             DestroyWindow(hwnd);
+            if (hParent && IsWindow(hParent)) {
+                ShowWindow(hParent, SW_RESTORE);
+                SetForegroundWindow(hParent);
+                SetWindowPos(hParent, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+                SetWindowPos(hParent, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+                SetActiveWindow(hParent);
+                SetFocus(hParent);
+            }
         }
         return 0;
     case WM_CLOSE:
