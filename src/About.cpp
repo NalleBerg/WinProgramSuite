@@ -1,5 +1,6 @@
 #include "About.h"
 #include "ctrlw.h"
+#include "../resource.h"
 #include <windows.h>
 #include <richedit.h>
 #include <string>
@@ -12,8 +13,8 @@
 using namespace Gdiplus;
 
 // Version info
-const wchar_t ABOUT_PUBLISHED[] = L"07-01-2026";
-const wchar_t ABOUT_VERSION[] = L"2026.01.07.11";
+const wchar_t ABOUT_PUBLISHED[] = L"11-01-2026";
+const wchar_t ABOUT_VERSION[] = L"2026.01.11.18";
 
 // External i18n function
 extern std::wstring t(const char *key);
@@ -197,6 +198,13 @@ void ShowAboutDialog(HWND parent) {
         MessageBoxW(parent, L"Unable to create About window.", L"Error", MB_OK | MB_ICONERROR);
         return;
     }
+    
+    // Set app icon
+    HICON hIcon = (HICON)LoadImageW(hi, MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON, 0, 0, LR_DEFAULTSIZE | LR_SHARED);
+    if (hIcon) {
+        SendMessageW(dlg, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
+        SendMessageW(dlg, WM_SETICON, ICON_BIG, (LPARAM)hIcon);
+    }
 
     // Create RichEdit control - fills entire area, logo will scroll with content
     HWND hEdit = CreateWindowExW(0, L"RichEdit20W", NULL,
@@ -376,6 +384,13 @@ void ShowLicenseDialog(HWND parent) {
     if (!dlg) {
         MessageBoxW(parent, L"Unable to create License window.", L"Error", MB_OK | MB_ICONERROR);
         return;
+    }
+    
+    // Set app icon
+    HICON hIcon = (HICON)LoadImageW(hi, MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON, 0, 0, LR_DEFAULTSIZE | LR_SHARED);
+    if (hIcon) {
+        SendMessageW(dlg, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
+        SendMessageW(dlg, WM_SETICON, ICON_BIG, (LPARAM)hIcon);
     }
     
     // Load and display GNU logo at top

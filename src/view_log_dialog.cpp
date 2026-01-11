@@ -1,5 +1,6 @@
 #include "view_log_dialog.h"
 #include "Config.h"
+#include "../resource.h"
 #include <windows.h>
 #include <richedit.h>
 #include <commctrl.h>
@@ -121,6 +122,13 @@ bool ShowInstallLogDialog(HWND parent, const std::string &locale) {
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MAXIMIZEBOX, 
         px, py, W, H, parent, NULL, GetModuleHandleW(NULL), NULL);
     if (!hDlg) return false;
+    
+    // Set app icon
+    HICON hIcon = (HICON)LoadImageW(GetModuleHandleW(NULL), MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON, 0, 0, LR_DEFAULTSIZE | LR_SHARED);
+    if (hIcon) {
+        SendMessageW(hDlg, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
+        SendMessageW(hDlg, WM_SETICON, ICON_BIG, (LPARAM)hIcon);
+    }
     
     // Get actual client area size (excludes title bar and borders)
     RECT clientRect;

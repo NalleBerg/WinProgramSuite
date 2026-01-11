@@ -3,6 +3,7 @@
 #include "Config.h"
 #include "logging.h"
 #include "skip_update.h"
+#include "../resource.h"
 #include <windows.h>
 #include <commctrl.h>
 #include <windowsx.h>
@@ -405,6 +406,13 @@ bool ShowUnexcludeDialog(HWND parent, const std::string &locale) {
     if (title.empty()) title = L"Manage Excluded Apps";
     HWND hDlg = CreateWindowExW(WS_EX_DLGMODALFRAME, kClass, title.c_str(), WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU, px, py, W, H, parent, NULL, GetModuleHandleW(NULL), NULL);
     if (!hDlg) return false;
+    
+    // Set app icon
+    HICON hIcon = (HICON)LoadImageW(GetModuleHandleW(NULL), MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON, 0, 0, LR_DEFAULTSIZE | LR_SHARED);
+    if (hIcon) {
+        SendMessageW(hDlg, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
+        SendMessageW(hDlg, WM_SETICON, ICON_BIG, (LPARAM)hIcon);
+    }
     // allocate context for this dialog and copy entries
     DialogContext *ctx = new DialogContext();
     ctx->parent = parent;

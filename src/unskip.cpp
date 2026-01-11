@@ -1,4 +1,5 @@
 #include "unskip.h"
+#include "../resource.h"
 #include <windows.h>
 #include <commctrl.h>
 #include <windowsx.h>
@@ -453,6 +454,13 @@ bool ShowUnskipDialog(HWND parent) {
     if (parent && IsWindow(parent)) { GetWindowRect(parent, &prc); px = prc.left + 40; py = prc.top + 40; }
     HWND hDlg = CreateWindowExW(WS_EX_DLGMODALFRAME, kClass, Utf8ToWide(LoadI18nValue(locale, "unskip_dialog_title")).c_str(), WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU, px, py, W, H, parent, NULL, GetModuleHandleW(NULL), NULL);
     if (!hDlg) return false;
+    
+    // Set app icon
+    HICON hIcon = (HICON)LoadImageW(GetModuleHandleW(NULL), MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON, 0, 0, LR_DEFAULTSIZE | LR_SHARED);
+    if (hIcon) {
+        SendMessageW(hDlg, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
+        SendMessageW(hDlg, WM_SETICON, ICON_BIG, (LPARAM)hIcon);
+    }
     // allocate context for this dialog and copy entries
     DialogContext *ctx = new DialogContext();
     ctx->parent = parent;

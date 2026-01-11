@@ -1,4 +1,5 @@
 #include "exclude_confirm_dialog.h"
+#include "../resource.h"
 #include <windows.h>
 #include <commctrl.h>
 #include <string>
@@ -171,6 +172,14 @@ bool ShowExcludeConfirm(HWND parent, const std::wstring &appname) {
         int mb2 = MessageBoxW(parent, wcontent.c_str(), wtitle.c_str(), MB_YESNO | MB_ICONQUESTION | MB_SETFOREGROUND);
         return (mb2 == IDYES);
     }
+    
+    // Set app icon
+    HICON hIcon = (HICON)LoadImageW(GetModuleHandleW(NULL), MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON, 0, 0, LR_DEFAULTSIZE | LR_SHARED);
+    if (hIcon) {
+        SendMessageW(hDlg, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
+        SendMessageW(hDlg, WM_SETICON, ICON_BIG, (LPARAM)hIcon);
+    }
+    
     // set pointer for result storage
     SetPropW(hDlg, L"WUP_RES", (HANDLE)&result);
     // determine client area so controls are positioned within visible client rect

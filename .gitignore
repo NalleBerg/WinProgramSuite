@@ -21,5 +21,15 @@ closetray.cpp
 wup*.*
 wupdbg*.*
 
+# Ignore debug files from development/troubleshooting
+failed_progress_at_download.txt
+progress_raw_debug.txt
+parse_debug.txt
+MB_debug.txt
+rtf_debug.txt
+progress_debug.txt
+loaded_log_debug.txt
+log_debug.txt
+
 # Packaged installer staging dir
 /WinUpdate/
