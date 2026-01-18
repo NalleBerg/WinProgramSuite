@@ -12,7 +12,6 @@ $ErrorActionPreference = "Continue"
 
 $scriptDir = $PSScriptRoot
 $dbPath = Join-Path $scriptDir "WinProgramManager.db"
-$ignoreDbPath = Join-Path $scriptDir "WinProgramManagerIgnore.db"
 $sqlite = Join-Path $scriptDir "sqlite3\sqlite3.exe"
 $logPath = Join-Path $scriptDir "correlation_analysis.log"
 
@@ -43,20 +42,6 @@ Write-Log "Correlation threshold: $($CORRELATION_THRESHOLD * 100)%"
 Write-Log "Minimum sample size: $MIN_SAMPLE_SIZE"
 if ($DryRun) { Write-Log "DRY RUN MODE - No changes will be written" "WARNING" }
 
-# Get ignored tags
-Write-Log "Loading ignored tags..."
-$ignoredTags = @()
-try {
-    $result = & $sqlite $ignoreDbPath "SELECT tag FROM ignored_tags;" 2>&1
-    if ($LASTEXITCODE -eq 0) {
-        $ignoredTags = $result | Where-Object { $_ -ne "" }
-        Write-Log "Loaded $($ignoredTags.Count) ignored tags"
-    }
-}
-catch {
-    Write-Log "Error loading ignored tags: $_" "ERROR"
-}
-
 # Get all tags from all packages
 Write-Log "Analyzing tag patterns across all packages..."
 $tagsByPackage = @{}
@@ -86,7 +71,7 @@ try {
             if ($tagsStr -and $tagsStr -ne "") {
                 $tags = $tagsStr -split '\|' | Where-Object { 
                     $tag = $_.Trim().ToLower()
-                    $tag -ne "" -and $ignoredTags -notcontains $tag
+                    $tag -ne ""
                 }
                 
                 if ($tags.Count -gt 0) {
@@ -191,8 +176,14 @@ if ($inferenceRules.Count -gt $displayCount) {
 Write-Log "`n=== Applying Inference Rules ===" "SUCCESS"
 $categoriesAdded = 0
 $packagesUpdated = 0
+$startTime = Get-Date
+$processedRules = 0
+$totalRules = $inferenceRules.Count
+
+Write-Log "Total rules to process: $totalRules"
 
 foreach ($rule in $inferenceRules) {
+    $processedRules++
     # Find packages that have source tag but not target tag
     $candidatePackages = @()
     
@@ -210,14 +201,29 @@ foreach ($rule in $inferenceRules) {
     
     if ($candidatePackages.Count -gt 0) {
         $pct = [math]::Round($rule.Correlation * 100, 1)
-        Write-Log "Rule: '$($rule.Source)' -> '$($rule.Target)' (${pct}%)" "VERBOSE"
-        Write-Log "  Found $($candidatePackages.Count) packages to update" "VERBOSE"
+        
+        # Calculate progress and ETA
+        $elapsed = (Get-Date) - $startTime
+        $avgTimePerRule = if ($processedRules -gt 0) { $elapsed.TotalSeconds / $processedRules } else { 0 }
+        $remainingRules = $totalRules - $processedRules
+        $etaSeconds = $avgTimePerRule * $remainingRules
+        $etaSpan = [TimeSpan]::FromSeconds($etaSeconds)
+        
+        $elapsedStr = if ($elapsed.TotalHours -ge 1) { 
+            "{0:0}h {1:0}m" -f $elapsed.Hours, $elapsed.Minutes 
+        } else { 
+            "{0:0}m {1:0}s" -f $elapsed.Minutes, $elapsed.Seconds 
+        }
+        $etaStr = if ($etaSpan.TotalHours -ge 1) { 
+            "{0:0.1}h" -f $etaSpan.TotalHours 
+        } else { 
+            "{0:0}m" -f $etaSpan.TotalMinutes 
+        }
+        
+        Write-Log "[$processedRules/$totalRules] '$($rule.Source)' -> '$($rule.Target)' (${pct}%) | Elapsed: $elapsedStr | ETA: $etaStr"
+        Write-Log "  Updating $($candidatePackages.Count) packages..."
         
         foreach ($candidate in $candidatePackages) {
-            if ($Verbose) {
-                Write-Log "    Adding '$($rule.Target)' to $($candidate.PackageId)" "VERBOSE"
-            }
-            
             if (-not $DryRun) {
                 # Get or create category ID
                 $getCategoryQuery = "SELECT id FROM categories WHERE LOWER(category_name) = LOWER('$($rule.Target)');"

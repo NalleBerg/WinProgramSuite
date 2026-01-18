@@ -81,7 +81,13 @@ function Initialize-IgnoreDatabase {
         'multilingual', 'localization', 'translation'
     )
     
-    if (Test-Path $ignoreDbPath) { Remove-Item $ignoreDbPath -Force }
+    # Backup existing ignore database before removing
+    if (Test-Path $ignoreDbPath) {
+        $backupPath = $ignoreDbPath -replace '\.db$', "_backup_$(Get-Date -Format 'yyyyMMdd_HHmmss').db"
+        Copy-Item $ignoreDbPath $backupPath -Force
+        Write-Log "Backed up ignore database to: $backupPath" "Yellow"
+        Remove-Item $ignoreDbPath -Force
+    }
     
     & sqlite3\sqlite3.exe $ignoreDbPath "CREATE TABLE ignored_tags (tag_name TEXT PRIMARY KEY);"
     foreach ($tag in $ignoredTags) {
@@ -95,7 +101,13 @@ function Initialize-IgnoreDatabase {
 function Initialize-MainDatabase {
     Write-Log "Creating fresh database with complete schema..." "Cyan"
     
-    if (Test-Path $dbPath) { Remove-Item $dbPath -Force }
+    # Backup existing main database before removing
+    if (Test-Path $dbPath) {
+        $backupPath = $dbPath -replace '\.db$', "_backup_$(Get-Date -Format 'yyyyMMdd_HHmmss').db"
+        Copy-Item $dbPath $backupPath -Force
+        Write-Log "Backed up main database to: $backupPath" "Yellow"
+        Remove-Item $dbPath -Force
+    }
     
     $createApps = @"
 CREATE TABLE apps (

@@ -36,3 +36,67 @@ if(MSVC)
 else()
     target_compile_options(WinProgramManager PRIVATE -Wall -Wextra -Wpedantic)
 endif()
+
+# Updater executable (hidden, no console)
+add_executable(WinProgramUpdater WIN32
+    updater_main.cpp
+    WinProgramUpdater.cpp
+    WinProgramUpdater.h
+)
+
+# Include SQLite3 headers
+target_include_directories(WinProgramUpdater PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/sqlite3)
+
+# Link SQLite3 and Windows libraries
+target_link_libraries(WinProgramUpdater
+    ${CMAKE_CURRENT_SOURCE_DIR}/sqlite3/sqlite3.dll
+    shell32
+    ole32
+)
+
+# Link options for MinGW
+if(MINGW)
+    target_link_options(WinProgramUpdater PRIVATE -municode)
+endif()
+
+# Enable Unicode
+target_compile_definitions(WinProgramUpdater PRIVATE UNICODE _UNICODE)
+
+# Compiler warnings
+if(MSVC)
+    target_compile_options(WinProgramUpdater PRIVATE /W4)
+else()
+    target_compile_options(WinProgramUpdater PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+# Console test version for debugging
+add_executable(WinProgramUpdaterTest
+    updater_main.cpp
+    WinProgramUpdater.cpp
+    WinProgramUpdater.h
+)
+
+# Include SQLite3 headers
+target_include_directories(WinProgramUpdaterTest PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/sqlite3)
+
+# Link SQLite3 and Windows libraries
+target_link_libraries(WinProgramUpdaterTest
+    ${CMAKE_CURRENT_SOURCE_DIR}/sqlite3/sqlite3.dll
+    shell32
+    ole32
+)
+
+# Link options for MinGW
+if(MINGW)
+    target_link_options(WinProgramUpdaterTest PRIVATE -municode -mconsole)
+endif()
+
+# Enable Unicode and console mode
+target_compile_definitions(WinProgramUpdaterTest PRIVATE UNICODE _UNICODE _CONSOLE)
+
+# Compiler warnings
+if(MSVC)
+    target_compile_options(WinProgramUpdaterTest PRIVATE /W4)
+else()
+    target_compile_options(WinProgramUpdaterTest PRIVATE -Wall -Wextra -Wpedantic)
+endif()

@@ -79,7 +79,11 @@ function Initialize-IgnoreDatabase {
         'multilingual', 'localization', 'translation'
     )
     
+    # Backup existing ignore database before removing
     if (Test-Path $ignoreDbPath) {
+        $backupPath = $ignoreDbPath -replace '\.db$', "_backup_$(Get-Date -Format 'yyyyMMdd_HHmmss').db"
+        Copy-Item $ignoreDbPath $backupPath -Force
+        Write-Log "Backed up ignore database to: $backupPath"
         Remove-Item $ignoreDbPath -Force
     }
     
@@ -96,7 +100,11 @@ function Initialize-IgnoreDatabase {
 function Initialize-MainDatabase {
     Write-Log "Initializing main database with complete schema..."
     
+    # Backup existing main database before removing
     if (Test-Path $dbPath) {
+        $backupPath = $dbPath -replace '\.db$', "_backup_$(Get-Date -Format 'yyyyMMdd_HHmmss').db"
+        Copy-Item $dbPath $backupPath -Force
+        Write-Log "Backed up main database to: $backupPath"
         Remove-Item $dbPath -Force
     }
     
