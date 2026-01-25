@@ -2,6 +2,88 @@
 Notes for future versioned changelog
 
 =====================================
+Date: 2026-01-25
+Component: WinProgramManager
+
+FEATURE: Advanced Search Functionality with End Search Dialog
+-------------------------------------------------------------
+- Implemented comprehensive search system with multi-field filtering
+- Visual feedback with animated loading dialog during search operations
+- End Search functionality to restore full application list
+- Animated spinner dialog during table repopulation
+- Brown package icon as default for applications without custom icons
+
+SEARCH CAPABILITIES:
+- Multi-field search: Name, Publisher, Package ID
+- Case-sensitive and case-insensitive options
+- Exact match and substring search modes
+- Regular expression support for advanced queries
+- Category filtering alongside text search
+- Refine results mode to search within current results
+- Dynamic result count display
+
+LOADING DIALOG FEATURES:
+- Animated blue spinner matching startup dialog design
+- "Repopulating table..." message with i18n support
+- 60ms animation interval for smooth rotation
+- Dialog processes messages during work to keep spinner alive
+- ProcessDialogMessages() helper called periodically during LoadTags() and LoadApps()
+- Non-blocking UI - spinner animates continuously throughout operation
+
+DEFAULT ICON SYSTEM:
+- Brown 3D package icon (RGB 139,90,43) as default at ImageList index 0
+- 3D box design with shading: front, top, and side faces
+- Tape line detail for realistic appearance
+- All apps initialized with iconIndex=0 instead of -1
+- Fallback logic ensures brown package displays for apps without custom icons
+
+TECHNICAL DETAILS:
+- Search state maintained with atomic flags and result vectors
+- In-memory search using g_allApps cache for performance
+- Message processing every 10 categories and 50 apps during loading
+- Timer-based spinner with Unicode rotation characters (◐ ◓ ◑ ◒)
+- IDD_LOADING_DIALOG resource (250×65 pixels, centered)
+- g_iconLoadingRunning flag removed - work done on main thread with message pumping
+
+INTERNATIONALIZATION:
+- Added "repopulating_table" field to Locale structure
+- Updated locale files:
+  * en_GB.txt: "Repopulating table..."
+  * nb_NO.txt: "Fyller tabellen på nytt..."
+  * sv_SE.txt: "Återfyller tabellen..."
+- Dialog title uses existing "wait_moment" string
+
+USER EXPERIENCE IMPROVEMENTS:
+- End Search button appears during active search
+- One-click restoration of full application list
+- Visual feedback during potentially slow operations
+- Professional appearance with Windows-style info icon
+- Smooth spinner animation throughout loading process
+- No UI freezing - dialog remains responsive
+
+FILES MODIFIED:
+- WinProgramManager/main.cpp
+  * Added ProcessDialogMessages() helper function
+  * Modified EndSearch() to show loading dialog
+  * Enhanced LoadTags() with message processing every 10 items
+  * Enhanced LoadApps() with message processing every 50 items
+  * Changed app.iconIndex initialization from -1 to 0
+  * Added brown package icon creation in CreateControls()
+  * Modified fallback icon logic to use index 0
+- WinProgramManager/winprogrammanager.rc
+  * Added IDD_LOADING_DIALOG resource definition
+- WinProgramManager/locale/en_GB.txt
+- WinProgramManager/locale/nb_NO.txt
+- WinProgramManager/locale/sv_SE.txt
+
+KNOWN ISSUES RESOLVED:
+- Fixed spinner not animating (message loop blocked by UI operations)
+- Fixed spinner freezing completely during work
+- Fixed infinite spinning (worker thread calling UI functions)
+- Fixed brown package icons not showing for apps without custom icons
+- Fixed spinner only moving during window redraws
+
+=====================================
 Date: 2026-01-24
 Component: WinProgramManager
 

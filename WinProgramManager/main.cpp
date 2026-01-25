@@ -7,16 +7,19 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <set>
 #include <algorithm>
 #include <fstream>
 #include <thread>
 #include <atomic>
+#include <regex>
 #include "resource.h"
+#include "search.h"
 
 // Control IDs
-#define ID_TAG_SEARCH 1001
+#define ID_SEARCH_BTN 1001
+#define ID_END_SEARCH_BTN 1006
 #define ID_TAG_TREE 1002
-#define ID_APP_SEARCH 1003
 #define ID_APP_LIST 1004
 #define ID_LANG_COMBO 1005
 
@@ -35,13 +38,15 @@ struct Locale {
     std::wstring all;
     std::wstring title;
     std::wstring processing_database;
+    std::wstring wait_moment;
+    std::wstring repopulating_table;
 };
 
 // Global variables
-HWND g_hTagSearch = NULL;
+HWND g_hSearchBtn = NULL;
+HWND g_hEndSearchBtn = NULL;
 HWND g_hTagTree = NULL;
 HWND g_hTagCountLabel = NULL;
-HWND g_hAppSearch = NULL;
 HWND g_hAppList = NULL;
 HWND g_hAppCountLabel = NULL;
 HWND g_hCategoryLabel = NULL;  // Category name label
@@ -55,12 +60,27 @@ sqlite3* g_db = NULL;
 Locale g_locale;
 std::wstring g_currentLang = L"en_GB";
 
+// Search state variables
+bool g_searchActive = false;
+std::wstring g_searchCategoryFilter;
+std::wstring g_searchAppFilter;
+bool g_searchCaseSensitive = false;
+bool g_searchExactMatch = false;
+bool g_searchUseRegex = false;
+bool g_searchRefineResults = false;
+std::vector<std::wstring> g_filteredCategories;
+std::vector<std::wstring> g_allCategories;  // Store all categories for reset
+
 // Loading dialog globals
 static HWND g_loadingDlg = NULL;
 static HWND g_spinnerCtrl = NULL;
 static int g_spinnerFrame = 0;
 static std::thread g_loadingThread;
 static std::atomic<bool> g_loadingThreadRunning(false);
+
+// Icon loading dialog globals
+static HWND g_hIconLoadingDialog = nullptr;
+static std::atomic<bool> g_iconLoadingRunning(false);
 
 // Global for main window handle
 static HWND g_mainWindow = NULL;
@@ -186,6 +206,7 @@ struct AppInfo {
     std::wstring publisher;
     std::wstring homepage;
     int iconIndex;
+    std::vector<std::wstring> categories; // Categories this app belongs to
 };
 
 struct TagInfo {
@@ -193,24 +214,32 @@ struct TagInfo {
     int count;
 };
 
+// In-memory data cache for fast searching (declared after AppInfo)
+std::vector<AppInfo> g_allApps;  // All apps loaded into memory (metadata only, not icons)
+std::vector<std::wstring> g_allCategoryNames;  // All unique category names
+std::map<std::wstring, std::vector<int>> g_categoryToAppIds;  // Map category name to app IDs
+
 // Forward declarations
+INT_PTR CALLBACK SearchDialogProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
+INT_PTR CALLBACK IconLoadingDialogProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam);
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 void CreateControls(HWND hwnd);
 void ResizeControls(HWND hwnd);
 bool OpenDatabase();
 void CloseDatabase();
-void LoadTags(const std::wstring& filter = L"");
-void LoadApps(const std::wstring& tag, const std::wstring& filter = L"");
+void LoadAllDataIntoMemory();  // Load all apps and categories into memory for fast search
+void LoadAllIcons();  // Load all app icons into ImageList (call after ImageList is created)
 HBITMAP LoadIconFromBlob(const std::vector<unsigned char>& data, const std::wstring& type);
 HICON LoadIconFromMemory(const unsigned char* data, int size);
 void OnTagSelectionChanged();
-void OnTagSearchChanged();
-void OnAppSearchChanged();
 void OnAppDoubleClick();
 void OnLanguageChanged();
+void ExecuteSearch();
+void EndSearch();
+bool MatchString(const std::wstring& text, const std::wstring& pattern);
 bool LoadLocale(const std::wstring& lang);
 std::wstring FormatNumber(int num);
-std::wstring Trim(const std::wstring& str);
+std::wstring CapitalizeFirst(const std::wstring& str);
 
 // WinMain - Entry point
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
@@ -231,6 +260,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
         g_locale.all = L"All";
         g_locale.title = L"WinProgram Manager";
         g_locale.processing_database = L"Processing database...";
+        g_locale.wait_moment = L"Wait a moment....";
+        g_locale.repopulating_table = L"Repopulating table...";
     }
 
     // Initialize common controls
@@ -301,6 +332,269 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     return (int)msg.wParam;
 }
 
+// Search dialog procedure
+INT_PTR CALLBACK SearchDialogProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    (void)lParam;
+    
+    switch (uMsg) {
+        case WM_INITDIALOG: {
+            // Center the dialog on parent window
+            RECT rcParent, rcDlg;
+            HWND hwndParent = GetParent(hwndDlg);
+            GetWindowRect(hwndParent, &rcParent);
+            GetWindowRect(hwndDlg, &rcDlg);
+            
+            int x = rcParent.left + (rcParent.right - rcParent.left - (rcDlg.right - rcDlg.left)) / 2;
+            int y = rcParent.top + (rcParent.bottom - rcParent.top - (rcDlg.bottom - rcDlg.top)) / 2;
+            SetWindowPos(hwndDlg, NULL, x, y, 0, 0, SWP_NOZORDER | SWP_NOSIZE);
+            
+            // Set previous search values
+            SetDlgItemTextW(hwndDlg, IDC_SEARCH_CATEGORY, g_searchCategoryFilter.c_str());
+            SetDlgItemTextW(hwndDlg, IDC_SEARCH_APP, g_searchAppFilter.c_str());
+            
+            // Set radio button states
+            CheckDlgButton(hwndDlg, g_searchCaseSensitive ? IDC_CASE_SENSITIVE : IDC_CASE_INSENSITIVE, BST_CHECKED);
+            CheckDlgButton(hwndDlg, g_searchExactMatch ? IDC_EXACT_MATCH : IDC_CONTAINS, BST_CHECKED);
+            CheckDlgButton(hwndDlg, IDC_USE_REGEX, g_searchUseRegex ? BST_CHECKED : BST_UNCHECKED);
+            CheckDlgButton(hwndDlg, g_searchRefineResults ? IDC_REFINE_RESULTS : IDC_SEARCH_ALL, BST_CHECKED);
+            
+            // Disable refine results if no active search
+            EnableWindow(GetDlgItem(hwndDlg, IDC_REFINE_RESULTS), g_searchActive ? TRUE : FALSE);
+            
+            // If regex is checked, disable case/match options
+            if (g_searchUseRegex) {
+                EnableWindow(GetDlgItem(hwndDlg, IDC_CASE_INSENSITIVE), FALSE);
+                EnableWindow(GetDlgItem(hwndDlg, IDC_CASE_SENSITIVE), FALSE);
+                EnableWindow(GetDlgItem(hwndDlg, IDC_CONTAINS), FALSE);
+                EnableWindow(GetDlgItem(hwndDlg, IDC_EXACT_MATCH), FALSE);
+            }
+            
+            return TRUE;
+        }
+        
+        case WM_COMMAND: {
+            if (LOWORD(wParam) == IDC_USE_REGEX) {
+                // Enable/disable case and match options based on regex checkbox
+                BOOL useRegex = IsDlgButtonChecked(hwndDlg, IDC_USE_REGEX) == BST_CHECKED;
+                EnableWindow(GetDlgItem(hwndDlg, IDC_CASE_INSENSITIVE), !useRegex);
+                EnableWindow(GetDlgItem(hwndDlg, IDC_CASE_SENSITIVE), !useRegex);
+                EnableWindow(GetDlgItem(hwndDlg, IDC_CONTAINS), !useRegex);
+                EnableWindow(GetDlgItem(hwndDlg, IDC_EXACT_MATCH), !useRegex);
+                return TRUE;
+            }
+            
+            if (LOWORD(wParam) == IDOK) {
+                // Get search criteria from dialog
+                wchar_t catBuf[512] = {0};
+                wchar_t appBuf[512] = {0};
+                GetDlgItemTextW(hwndDlg, IDC_SEARCH_CATEGORY, catBuf, 512);
+                GetDlgItemTextW(hwndDlg, IDC_SEARCH_APP, appBuf, 512);
+                
+                g_searchCategoryFilter = catBuf;
+                g_searchAppFilter = appBuf;
+                
+                g_searchCaseSensitive = IsDlgButtonChecked(hwndDlg, IDC_CASE_SENSITIVE) == BST_CHECKED;
+                g_searchExactMatch = IsDlgButtonChecked(hwndDlg, IDC_EXACT_MATCH) == BST_CHECKED;
+                g_searchUseRegex = IsDlgButtonChecked(hwndDlg, IDC_USE_REGEX) == BST_CHECKED;
+                g_searchRefineResults = IsDlgButtonChecked(hwndDlg, IDC_REFINE_RESULTS) == BST_CHECKED;
+                
+                EndDialog(hwndDlg, IDOK);
+                return TRUE;
+            }
+            
+            if (LOWORD(wParam) == IDCANCEL) {
+                EndDialog(hwndDlg, IDCANCEL);
+                return TRUE;
+            }
+            break;
+        }
+        
+        case WM_CLOSE: {
+            EndDialog(hwndDlg, IDCANCEL);
+            return TRUE;
+        }
+    }
+    
+    return FALSE;
+}
+
+// Helper function for string matching
+bool MatchString(const std::wstring& text, const std::wstring& pattern) {
+    if (pattern.empty()) return true;
+    
+    if (g_searchUseRegex) {
+        try {
+            std::wregex re(pattern, std::regex_constants::icase);
+            return std::regex_search(text, re);
+        } catch (...) {
+            return false;  // Invalid regex
+        }
+    }
+    
+    std::wstring textCopy = text;
+    std::wstring patternCopy = pattern;
+    
+    if (!g_searchCaseSensitive) {
+        std::transform(textCopy.begin(), textCopy.end(), textCopy.begin(), ::towlower);
+        std::transform(patternCopy.begin(), patternCopy.end(), patternCopy.begin(), ::towlower);
+    }
+    
+    if (g_searchExactMatch) {
+        return textCopy == patternCopy;
+    } else {
+        return textCopy.find(patternCopy) != std::wstring::npos;
+    }
+}
+
+// Execute search based on current criteria
+void ExecuteSearch() {
+    if (g_allApps.empty()) return;  // No data loaded
+    
+    // Populate g_allCategories if empty (for potential future use)
+    if (g_allCategories.empty()) {
+        g_allCategories = g_allCategoryNames;
+    }
+    
+    // Clear previous results
+    g_filteredCategories.clear();
+    ListView_DeleteAllItems(g_hTagTree);
+    
+    // Determine which categories to search
+    std::vector<std::wstring> categoriesToSearch;
+    
+    if (!g_searchCategoryFilter.empty()) {
+        // Filter categories based on search criteria (in-memory)
+        for (const auto& category : g_allCategoryNames) {
+            if (MatchString(category, g_searchCategoryFilter)) {
+                categoriesToSearch.push_back(category);
+            }
+        }
+    } else {
+        // No category filter - use all categories
+        categoriesToSearch = g_allCategoryNames;
+    }
+    
+    // Now filter by app name if specified, and count matching apps per category
+    int displayIndex = 0;
+    for (const auto& category : categoriesToSearch) {
+        int matchingAppCount = 0;
+        
+        // Get app IDs for this category
+        auto it = g_categoryToAppIds.find(category);
+        if (it != g_categoryToAppIds.end()) {
+            for (int appId : it->second) {
+                // Find the app in g_allApps
+                for (const auto& app : g_allApps) {
+                    if (app.id == appId) {
+                        // Check if app matches app filter (if any)
+                        if (g_searchAppFilter.empty() || MatchString(app.name, g_searchAppFilter)) {
+                            matchingAppCount++;
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // Only add category if it has matching apps
+        if (matchingAppCount > 0) {
+            g_filteredCategories.push_back(category);
+            
+            // Add to ListView
+            std::wstring* displayText = new std::wstring(L"   " + category);
+            g_tagTextBuffers.push_back(displayText);
+            
+            LVITEMW lvi = {};
+            lvi.mask = LVIF_TEXT | LVIF_PARAM | LVIF_IMAGE;
+            lvi.iItem = displayIndex++;
+            lvi.iSubItem = 0;
+            lvi.pszText = (LPWSTR)displayText->c_str();
+            lvi.lParam = (LPARAM)displayText;
+            lvi.iImage = 0; // Closed folder
+            ListView_InsertItem(g_hTagTree, &lvi);
+        }
+    }
+    
+    // Update category count
+    int categoryCount = g_filteredCategories.size();
+    SetWindowTextW(g_hTagCountLabel, L"                                        ");
+    std::wstring countText = FormatNumber(categoryCount) + L" " + g_locale.categories;
+    SetWindowTextW(g_hTagCountLabel, countText.c_str());
+    
+    // Select first category if any results
+    if (categoryCount > 0) {
+        ListView_SetItemState(g_hTagTree, 0, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
+        OnTagSelectionChanged();
+    } else {
+        ListView_DeleteAllItems(g_hAppList);
+        SetWindowTextW(g_hAppCountLabel, (L"0 " + g_locale.apps).c_str());
+    }
+    
+    // Mark search as active
+    g_searchActive = true;
+    
+    // Show End Search button
+    ShowWindow(g_hEndSearchBtn, SW_SHOW);
+    ResizeControls(g_mainWindow);
+}
+
+// Helper to keep dialog responsive during long operations
+void ProcessDialogMessages() {
+    MSG msg;
+    while (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE)) {
+        if (!IsDialogMessageW(g_hIconLoadingDialog, &msg)) {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+    }
+}
+
+// End search and restore all data
+void EndSearch() {
+    // Create and show loading dialog - timer starts automatically
+    g_hIconLoadingDialog = CreateDialog((HINSTANCE)GetWindowLongPtr(g_mainWindow, GWLP_HINSTANCE), 
+                                        MAKEINTRESOURCE(IDD_LOADING_DIALOG), g_mainWindow, IconLoadingDialogProc);
+    if (!g_hIconLoadingDialog) return;
+    
+    SetDlgItemTextW(g_hIconLoadingDialog, IDC_LOADING_TEXT, g_locale.repopulating_table.c_str());
+    ShowWindow(g_hIconLoadingDialog, SW_SHOW);
+    UpdateWindow(g_hIconLoadingDialog);
+    
+    // Process a few messages to let dialog initialize and start spinning
+    MSG msg;
+    for (int i = 0; i < 10; i++) {
+        while (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE)) {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+        Sleep(16); // ~60fps
+    }
+    
+    // Clear search state
+    g_searchActive = false;
+    g_searchCategoryFilter.clear();
+    g_searchAppFilter.clear();
+    g_searchCaseSensitive = false;
+    g_searchExactMatch = false;
+    g_searchUseRegex = false;
+    g_searchRefineResults = false;
+    g_filteredCategories.clear();
+    
+    // Do the work on main thread (these are UI operations)
+    LoadTags();
+    OnTagSelectionChanged();
+    
+    // Hide End Search button
+    ShowWindow(g_hEndSearchBtn, SW_HIDE);
+    ResizeControls(g_mainWindow);
+    
+    // Destroy dialog (spinner dies with it)
+    if (g_hIconLoadingDialog) {
+        DestroyWindow(g_hIconLoadingDialog);
+        g_hIconLoadingDialog = nullptr;
+    }
+}
+
 // Window procedure
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
@@ -315,23 +609,14 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
                 DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
                 CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
 
-            // Post message to create controls and start loading - allows WM_CREATE to return immediately
-            PostMessageW(hwnd, WM_USER + 2, 0, 0);
-            
-            return 0;
-        }
-        
-        case WM_USER + 2: {
-            // Create controls on main thread
-            CreateControls(hwnd);
-            
-            // Now post message to start background loading
+            // Post message to start loading
             PostMessageW(hwnd, WM_USER + 1, 0, 0);
+            
             return 0;
         }
         
         case WM_USER + 1: {
-            // Start background thread to load data
+            // Start background thread to open database
             std::thread([hwnd]() {
                 // Open database
                 if (!OpenDatabase()) {
@@ -340,13 +625,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
                     return;
                 }
                 
-                // Load data
-                LoadTags();
-                OnTagSelectionChanged();  // Ensure initial selection state is correct
-                // Wait a bit for LoadApps to complete
-                Sleep(100);
-                
-                // Signal main window to show and close loading dialog
+                // Database opened - signal main window to continue
                 PostMessageW(hwnd, WM_USER, 0, 0);
             }).detach();
             
@@ -354,19 +633,17 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         }
         
         case WM_USER: {
-            // Loading complete - show main window and destroy loading dialog
-            ShowWindow(hwnd, SW_SHOW);
-            UpdateWindow(hwnd);
+            // Database loaded - create controls and load data
+            CreateControls(hwnd);
             
-            // Bring window to foreground
-            SetForegroundWindow(hwnd);
-            BringWindowToTop(hwnd);
+            // Load all icons into ImageList (must happen after ImageList is created)
+            LoadAllIcons();
             
-            // Set focus to category list for blue selection and reload apps
-            SetFocus(g_hTagTree);
-            OnTagSelectionChanged();  // Reload apps with focus set
+            // Load data into controls
+            LoadTags();
+            OnTagSelectionChanged();  // Load apps for initial selection
             
-            // Signal loading thread to stop and destroy dialog
+            // Signal loading thread to stop and destroy dialog BEFORE showing window
             g_loadingThreadRunning = false;
             if (g_loadingDlg && IsWindow(g_loadingDlg)) {
                 PostMessageW(g_loadingDlg, WM_CLOSE, 0, 0);
@@ -379,6 +656,18 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             
             g_loadingDlg = NULL;
             g_spinnerCtrl = NULL;
+            
+            // Now show the main window with all data loaded
+            ShowWindow(hwnd, SW_SHOW);
+            UpdateWindow(hwnd);
+            
+            // Bring window to foreground
+            SetForegroundWindow(hwnd);
+            BringWindowToTop(hwnd);
+            
+            // Set focus to category list for blue selection
+            SetFocus(g_hTagTree);
+            
             return 0;
         }
 
@@ -388,12 +677,17 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         }
 
         case WM_COMMAND: {
-            if (HIWORD(wParam) == EN_CHANGE) {
-                if ((HWND)lParam == g_hTagSearch) {
-                    OnTagSearchChanged();
-                } else if ((HWND)lParam == g_hAppSearch) {
-                    OnAppSearchChanged();
+            if (LOWORD(wParam) == ID_SEARCH_BTN) {
+                // Open search dialog
+                INT_PTR result = DialogBoxW(GetModuleHandle(NULL), MAKEINTRESOURCEW(IDD_SEARCH_DIALOG), hwnd, SearchDialogProc);
+                if (result == IDOK) {
+                    // User clicked Search - execute the search
+                    ExecuteSearch();
                 }
+            }
+            else if (LOWORD(wParam) == ID_END_SEARCH_BTN) {
+                // End search and restore all data
+                EndSearch();
             }
             else if (HIWORD(wParam) == CBN_SELCHANGE) {
                 if ((HWND)lParam == g_hLangCombo) {
@@ -522,21 +816,56 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             return DefWindowProc(hwnd, uMsg, wParam, lParam);
         }
 
-        case WM_PAINT: {
-            PAINTSTRUCT ps;
-            HDC hdc = BeginPaint(hwnd, &ps);
-            
-            // Draw splitter
-            RECT rc;
-            GetClientRect(hwnd, &rc);
-            rc.left = g_splitterPos - 2;
-            rc.right = g_splitterPos + 2;
-            FillRect(hdc, &rc, (HBRUSH)GetStockObject(GRAY_BRUSH));
-            
-            EndPaint(hwnd, &ps);
-            return 0;
+        case WM_DRAWITEM: {
+            LPDRAWITEMSTRUCT dis = (LPDRAWITEMSTRUCT)lParam;
+            if (dis->CtlID == ID_SEARCH_BTN) {
+                HWND hBtn = dis->hwndItem;
+                BOOL hover = (BOOL)GetWindowLongPtrW(hBtn, GWLP_USERDATA);
+                bool pressed = (dis->itemState & ODS_SELECTED) != 0;
+                HDC hdc = dis->hDC;
+                RECT rc = dis->rcItem;
+                // Base dark-blue color and variations (matching WinUpdate About button)
+                COLORREF base = RGB(10,57,129);
+                COLORREF hoverCol = RGB(25,95,210);
+                COLORREF pressCol = RGB(6,34,80);
+                HBRUSH hBrush = CreateSolidBrush(pressed ? pressCol : (hover ? hoverCol : base));
+                FillRect(hdc, &rc, hBrush);
+                DeleteObject(hBrush);
+                // Draw text
+                SetTextColor(hdc, RGB(255,255,255));
+                SetBkMode(hdc, TRANSPARENT);
+                HFONT hf = g_hBoldFont ? g_hBoldFont : (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+                HGDIOBJ oldf = SelectObject(hdc, hf);
+                DrawTextW(hdc, L"🔍 Search", -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+                SelectObject(hdc, oldf);
+                if (dis->itemState & ODS_FOCUS) DrawFocusRect(hdc, &rc);
+                return TRUE;
+            } else if (dis->CtlID == ID_END_SEARCH_BTN) {
+                HWND hBtn = dis->hwndItem;
+                BOOL hover = (BOOL)GetWindowLongPtrW(hBtn, GWLP_USERDATA);
+                bool pressed = (dis->itemState & ODS_SELECTED) != 0;
+                HDC hdc = dis->hDC;
+                RECT rc = dis->rcItem;
+                // Red color scheme for End Search
+                COLORREF base = RGB(180,40,40);
+                COLORREF hoverCol = RGB(220,60,60);
+                COLORREF pressCol = RGB(120,20,20);
+                HBRUSH hBrush = CreateSolidBrush(pressed ? pressCol : (hover ? hoverCol : base));
+                FillRect(hdc, &rc, hBrush);
+                DeleteObject(hBrush);
+                // Draw text
+                SetTextColor(hdc, RGB(255,255,255));
+                SetBkMode(hdc, TRANSPARENT);
+                HFONT hf = g_hBoldFont ? g_hBoldFont : (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+                HGDIOBJ oldf = SelectObject(hdc, hf);
+                DrawTextW(hdc, L"End Search", -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+                SelectObject(hdc, oldf);
+                if (dis->itemState & ODS_FOCUS) DrawFocusRect(hdc, &rc);
+                return TRUE;
+            }
+            return FALSE;
         }
-        
+
         case WM_DESTROY:
             CloseDatabase();
             if (g_hFont) DeleteObject(g_hFont);
@@ -583,20 +912,73 @@ void CreateControls(HWND hwnd) {
         DispatchMessageW(&msg);
     }
     
-    // Left panel - Tag search
-    g_hTagSearch = CreateWindowExW(
-        WS_EX_CLIENTEDGE,
-        L"EDIT",
-        L"",
-        WS_CHILD | WS_VISIBLE | ES_LEFT | ES_AUTOHSCROLL,
+    // Search button (magnifying glass) - owner-draw for custom colors
+    g_hSearchBtn = CreateWindowExW(
+        0,
+        L"BUTTON",
+        L"🔍 Search",
+        WS_CHILD | WS_VISIBLE | BS_OWNERDRAW | WS_TABSTOP,
         0, 0, 0, 0,
         hwnd,
-        (HMENU)ID_TAG_SEARCH,
+        (HMENU)ID_SEARCH_BTN,
         hInst,
         NULL
     );
-    SendMessageW(g_hTagSearch, WM_SETFONT, (WPARAM)g_hFont, TRUE);
-    SendMessageW(g_hTagSearch, EM_SETCUEBANNER, TRUE, (LPARAM)g_locale.search_tags.c_str());
+    SendMessageW(g_hSearchBtn, WM_SETFONT, (WPARAM)g_hFont, TRUE);
+    
+    // Subclass search button for hover effects (matching WinUpdate About button)
+    if (g_hSearchBtn) {
+        SetWindowSubclass(g_hSearchBtn, [](HWND h, UINT msg, WPARAM wp, LPARAM lp, UINT_PTR, DWORD_PTR)->LRESULT {
+            switch (msg) {
+            case WM_MOUSEMOVE: {
+                SetWindowLongPtrW(h, GWLP_USERDATA, 1);
+                InvalidateRect(h, NULL, TRUE);
+                TRACKMOUSEEVENT tme{}; tme.cbSize = sizeof(tme); tme.dwFlags = TME_LEAVE; tme.hwndTrack = h; TrackMouseEvent(&tme);
+                break;
+            }
+            case WM_MOUSELEAVE: {
+                SetWindowLongPtrW(h, GWLP_USERDATA, 0);
+                InvalidateRect(h, NULL, TRUE);
+                break;
+            }
+            }
+            return DefSubclassProc(h, msg, wp, lp);
+        }, 0, 0);
+    }
+    
+    // End Search button (initially hidden) - owner-draw for custom colors
+    g_hEndSearchBtn = CreateWindowExW(
+        0,
+        L"BUTTON",
+        L"End Search",
+        WS_CHILD | BS_OWNERDRAW | WS_TABSTOP,  // Hidden by default
+        0, 0, 0, 0,
+        hwnd,
+        (HMENU)ID_END_SEARCH_BTN,
+        hInst,
+        NULL
+    );
+    SendMessageW(g_hEndSearchBtn, WM_SETFONT, (WPARAM)g_hFont, TRUE);
+    
+    // Subclass end search button for hover effects
+    if (g_hEndSearchBtn) {
+        SetWindowSubclass(g_hEndSearchBtn, [](HWND h, UINT msg, WPARAM wp, LPARAM lp, UINT_PTR, DWORD_PTR)->LRESULT {
+            switch (msg) {
+            case WM_MOUSEMOVE: {
+                SetWindowLongPtrW(h, GWLP_USERDATA, 1);
+                InvalidateRect(h, NULL, TRUE);
+                TRACKMOUSEEVENT tme{}; tme.cbSize = sizeof(tme); tme.dwFlags = TME_LEAVE; tme.hwndTrack = h; TrackMouseEvent(&tme);
+                break;
+            }
+            case WM_MOUSELEAVE: {
+                SetWindowLongPtrW(h, GWLP_USERDATA, 0);
+                InvalidateRect(h, NULL, TRUE);
+                break;
+            }
+            }
+            return DefSubclassProc(h, msg, wp, lp);
+        }, 0, 0);
+    }
     
     // Category count label
     g_hTagCountLabel = CreateWindowExW(
@@ -712,21 +1094,6 @@ void CreateControls(HWND hwnd) {
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
-    
-    // Right panel - App search
-    g_hAppSearch = CreateWindowExW(
-        WS_EX_CLIENTEDGE,
-        L"EDIT",
-        L"",
-        WS_CHILD | WS_VISIBLE | ES_LEFT | ES_AUTOHSCROLL,
-        0, 0, 0, 0,
-        hwnd,
-        (HMENU)ID_APP_SEARCH,
-        hInst,
-        NULL
-    );
-    SendMessageW(g_hAppSearch, WM_SETFONT, (WPARAM)g_hFont, TRUE);
-    SendMessageW(g_hAppSearch, EM_SETCUEBANNER, TRUE, (LPARAM)g_locale.search_apps.c_str());
     
     // Category name label (bold navy blue)
     g_hCategoryLabel = CreateWindowExW(
@@ -860,20 +1227,36 @@ void ResizeControls(HWND hwnd) {
     GetClientRect(hwnd, &rc);
     
     const int margin = 8;
-    const int searchHeight = 34;  // 28 * 1.20
-    const int labelHeight = 24;   // 20 * 1.20
+    const int btnHeight = 30;
+    const int labelHeight = 24;
     const int spacing = 4;
     const int langComboWidth = 150;
+    const int searchBtnWidth = 100;
+    const int endSearchBtnWidth = 110;
+    const int searchBtnSpacing = 9;  // Extra space between buttons and dropdown
     
     // Language selector (top right)
     MoveWindow(g_hLangCombo, rc.right - margin - langComboWidth, margin, langComboWidth, 200, TRUE);
     
+    // Button layout depends on search state
+    if (g_searchActive && IsWindowVisible(g_hEndSearchBtn)) {
+        // Both buttons visible: [End Search] [Search] ... [Language]
+        int totalBtnWidth = searchBtnWidth + spacing + endSearchBtnWidth;
+        int searchX = rc.right - margin - langComboWidth - searchBtnSpacing - totalBtnWidth;
+        int endSearchX = searchX + searchBtnWidth + spacing;
+        
+        MoveWindow(g_hSearchBtn, searchX, margin, searchBtnWidth, btnHeight, TRUE);
+        MoveWindow(g_hEndSearchBtn, endSearchX, margin, endSearchBtnWidth, btnHeight, TRUE);
+    } else {
+        // Only search button visible: [Search] ... [Language]
+        MoveWindow(g_hSearchBtn, rc.right - margin - langComboWidth - searchBtnSpacing - searchBtnWidth, margin, searchBtnWidth, btnHeight, TRUE);
+    }
+    
     // Left panel
     int leftWidth = g_splitterPos - margin;
-    MoveWindow(g_hTagSearch, margin, margin, leftWidth, searchHeight, TRUE);
-    MoveWindow(g_hTagCountLabel, margin, margin + searchHeight + spacing, leftWidth, labelHeight, TRUE);
-    MoveWindow(g_hTagTree, margin, margin + searchHeight + spacing + labelHeight + spacing, 
-               leftWidth, rc.bottom - margin * 2 - searchHeight - labelHeight - spacing * 2, TRUE);
+    MoveWindow(g_hTagCountLabel, margin, margin + btnHeight + spacing, leftWidth, labelHeight, TRUE);
+    MoveWindow(g_hTagTree, margin, margin + btnHeight + spacing + labelHeight + spacing, 
+               leftWidth, rc.bottom - margin * 2 - btnHeight - labelHeight - spacing * 2, TRUE);
     
     // Right panel
     int rightX = g_splitterPos + 4;
@@ -881,14 +1264,13 @@ void ResizeControls(HWND hwnd) {
     
     // Reserve space for count (e.g., "14,109 apps" = ~100px)
     const int countWidth = 100;
-    const int categoryPadding = 5;  // 5px padding before category name
+    const int categoryPadding = 5;
     int categoryWidth = rightWidth - countWidth - spacing - categoryPadding;
     
-    MoveWindow(g_hAppSearch, rightX, margin, rightWidth, searchHeight, TRUE);
-    MoveWindow(g_hCategoryLabel, rightX + categoryPadding, margin + searchHeight + spacing, categoryWidth, labelHeight, TRUE);
-    MoveWindow(g_hAppCountLabel, rightX + categoryWidth + spacing, margin + searchHeight + spacing, countWidth, labelHeight, TRUE);
-    MoveWindow(g_hAppList, rightX, margin + searchHeight + spacing + labelHeight + spacing,
-               rc.right - rightX - margin, rc.bottom - margin * 2 - searchHeight - labelHeight - spacing * 2, TRUE);
+    MoveWindow(g_hCategoryLabel, rightX + categoryPadding, margin + btnHeight + spacing, categoryWidth, labelHeight, TRUE);
+    MoveWindow(g_hAppCountLabel, rightX + categoryWidth + spacing, margin + btnHeight + spacing, countWidth, labelHeight, TRUE);
+    MoveWindow(g_hAppList, rightX, margin + btnHeight + spacing + labelHeight + spacing,
+               rc.right - rightX - margin, rc.bottom - margin * 2 - btnHeight - labelHeight - spacing * 2, TRUE);
 }
 
 bool OpenDatabase() {
@@ -929,6 +1311,9 @@ bool OpenDatabase() {
     }
     sqlite3_finalize(stmt);
     
+    // Load all data into memory for fast searching
+    LoadAllDataIntoMemory();
+    
     return true;
 }
 
@@ -939,11 +1324,232 @@ void CloseDatabase() {
     }
 }
 
-std::wstring Trim(const std::wstring& str) {
-    size_t first = str.find_first_not_of(L" \t\r\n");
-    if (first == std::wstring::npos) return L"";
-    size_t last = str.find_last_not_of(L" \t\r\n");
-    return str.substr(first, last - first + 1);
+// Load all apps and categories into memory for instant searching
+void LoadAllDataIntoMemory() {
+    if (!g_db) return;
+    
+    // Clear existing data
+    g_allApps.clear();
+    g_allCategoryNames.clear();
+    g_categoryToAppIds.clear();
+    
+    // Load all apps metadata (icons loaded separately after ImageList is created)
+    sqlite3_stmt* stmt;
+    const char* sql = "SELECT id, package_id, name, version, publisher, homepage FROM apps WHERE name IS NOT NULL AND TRIM(name) != '' ORDER BY name;";
+    
+    if (sqlite3_prepare_v2(g_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            AppInfo app;
+            app.id = sqlite3_column_int(stmt, 0);
+            app.iconIndex = 0;  // Default to brown package icon (index 0)
+            
+            // Convert UTF-8 to wide strings
+            auto convert = [](const char* utf8) -> std::wstring {
+                if (!utf8 || !utf8[0]) return L"";
+                
+                int wsize = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8, -1, nullptr, 0);
+                if (wsize == 0) {
+                    wsize = MultiByteToWideChar(CP_ACP, 0, utf8, -1, nullptr, 0);
+                    if (wsize == 0) return L"";
+                    std::wstring result(wsize - 1, 0);
+                    MultiByteToWideChar(CP_ACP, 0, utf8, -1, &result[0], wsize);
+                    return result;
+                }
+                std::wstring result(wsize - 1, 0);
+                MultiByteToWideChar(CP_UTF8, 0, utf8, -1, &result[0], wsize);
+                return result;
+            };
+            
+            app.packageId = convert((const char*)sqlite3_column_text(stmt, 1));
+            app.name = convert((const char*)sqlite3_column_text(stmt, 2));
+            app.version = convert((const char*)sqlite3_column_text(stmt, 3));
+            app.publisher = convert((const char*)sqlite3_column_text(stmt, 4));
+            app.homepage = convert((const char*)sqlite3_column_text(stmt, 5));
+            
+            g_allApps.push_back(app);
+        }
+        sqlite3_finalize(stmt);
+    }
+    
+    // Load all categories and build app-category associations
+    const char* catSql = "SELECT c.category_name, ac.app_id FROM categories c " 
+                         "JOIN app_categories ac ON c.id = ac.category_id " 
+                         "ORDER BY c.category_name;";
+    
+    std::set<std::wstring> uniqueCategories;
+    
+    if (sqlite3_prepare_v2(g_db, catSql, -1, &stmt, nullptr) == SQLITE_OK) {
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            const char* catName = (const char*)sqlite3_column_text(stmt, 0);
+            int appId = sqlite3_column_int(stmt, 1);
+            
+            if (!catName || !catName[0]) continue;
+            
+            // Convert to wide string
+            int wsize = MultiByteToWideChar(CP_UTF8, 0, catName, -1, nullptr, 0);
+            if (wsize <= 1) continue;
+            std::wstring categoryName(wsize - 1, 0);
+            MultiByteToWideChar(CP_UTF8, 0, catName, -1, &categoryName[0], wsize);
+            
+            // Trim and capitalize
+            size_t first = categoryName.find_first_not_of(L" \t\r\n");
+            if (first == std::wstring::npos) continue;
+            size_t last = categoryName.find_last_not_of(L" \t\r\n");
+            categoryName = categoryName.substr(first, last - first + 1);
+            categoryName = CapitalizeFirst(categoryName);
+            
+            uniqueCategories.insert(categoryName);
+            g_categoryToAppIds[categoryName].push_back(appId);
+            
+            // Add category to the app's categories list
+            for (auto& app : g_allApps) {
+                if (app.id == appId) {
+                    app.categories.push_back(categoryName);
+                    break;
+                }
+            }
+        }
+        sqlite3_finalize(stmt);
+    }
+    
+    // Convert set to vector for easier access
+    g_allCategoryNames.assign(uniqueCategories.begin(), uniqueCategories.end());
+}
+
+// Load all app icons into ImageList (must be called after ImageList is created)
+// Dialog procedure for icon loading dialog
+INT_PTR CALLBACK IconLoadingDialogProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
+    static int spinnerFrame = 0;
+    static HWND hSpinner = NULL;
+    static HWND hText = NULL;
+    static HFONT hSpinnerFont = NULL;
+    static HBRUSH hDialogBrush = NULL;
+    
+    switch (message) {
+        case WM_INITDIALOG: {
+            // Get the dialog background brush
+            hDialogBrush = GetSysColorBrush(COLOR_BTNFACE);
+            
+            // Center the dialog on screen
+            RECT rc;
+            GetWindowRect(hDlg, &rc);
+            int x = (GetSystemMetrics(SM_CXSCREEN) - (rc.right - rc.left)) / 2;
+            int y = (GetSystemMetrics(SM_CYSCREEN) - (rc.bottom - rc.top)) / 2;
+            SetWindowPos(hDlg, HWND_TOPMOST, x, y, 0, 0, SWP_NOSIZE);
+            
+            // Set localized title
+            SetWindowTextW(hDlg, g_locale.wait_moment.c_str());
+            
+            // Set info icon (blue I)
+            HICON hIcon = LoadIcon(NULL, IDI_INFORMATION);
+            SendDlgItemMessage(hDlg, IDC_LOADING_ICON, STM_SETICON, (WPARAM)hIcon, 0);
+            
+            // Get text control
+            hText = GetDlgItem(hDlg, IDC_LOADING_TEXT);
+            
+            // Get spinner control and set up large font
+            hSpinner = GetDlgItem(hDlg, IDC_LOADING_ANIMATE);
+            if (hSpinner) {
+                hSpinnerFont = CreateFontW(40, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                    DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                    CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+                SendMessageW(hSpinner, WM_SETFONT, (WPARAM)hSpinnerFont, TRUE);
+                // Set initial spinner character
+                SetWindowTextW(hSpinner, L"\u25D0");
+            }
+            
+            // Start timer for spinner animation (60ms = same as startup spinner)
+            SetTimer(hDlg, 1, 60, NULL);
+            spinnerFrame = 0;
+            
+            return TRUE;
+        }
+        
+        case WM_TIMER: {
+            if (wParam == 1 && hSpinner && IsWindow(hSpinner)) {
+                const wchar_t* frames[] = { L"\u25D0", L"\u25D3", L"\u25D1", L"\u25D2" };
+                spinnerFrame = (spinnerFrame + 1) % 4;
+                SetWindowTextW(hSpinner, frames[spinnerFrame]);
+                // Force immediate redraw
+                InvalidateRect(hSpinner, NULL, FALSE);
+                UpdateWindow(hSpinner);
+            }
+            return TRUE;
+        }
+        
+        case WM_CTLCOLORSTATIC: {
+            HDC hdcStatic = (HDC)wParam;
+            HWND hStatic = (HWND)lParam;
+            
+            // Make spinner blue with transparent background
+            if (hStatic == hSpinner) {
+                SetTextColor(hdcStatic, RGB(0, 120, 215));
+                SetBkMode(hdcStatic, TRANSPARENT);
+                return (LRESULT)hDialogBrush;
+            }
+            // Regular text black with transparent background
+            else if (hStatic == hText) {
+                SetTextColor(hdcStatic, RGB(0, 0, 0));
+                SetBkMode(hdcStatic, TRANSPARENT);
+                return (LRESULT)hDialogBrush;
+            }
+            break;
+        }
+        
+        case WM_DESTROY:
+            KillTimer(hDlg, 1);
+            if (hSpinnerFont) {
+                DeleteObject(hSpinnerFont);
+                hSpinnerFont = NULL;
+            }
+            return TRUE;
+            
+        case WM_CLOSE:
+            return TRUE;  // Don't allow user to close
+    }
+    return FALSE;
+}
+
+void LoadAllIcons() {
+    if (!g_db || !g_hImageList) return;
+    
+    // Query all apps with their icons
+    sqlite3_stmt* stmt;
+    const char* sql = "SELECT id, icon_data FROM apps WHERE name IS NOT NULL AND TRIM(name) != '' ORDER BY name;";
+    
+    if (sqlite3_prepare_v2(g_db, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            int appId = sqlite3_column_int(stmt, 0);
+            
+            // Find this app in g_allApps
+            for (auto& app : g_allApps) {
+                if (app.id == appId) {
+                    // Load icon from database
+                    bool iconLoaded = false;
+                    if (sqlite3_column_type(stmt, 1) == SQLITE_BLOB) {
+                        const void* blobData = sqlite3_column_blob(stmt, 1);
+                        int blobSize = sqlite3_column_bytes(stmt, 1);
+                        
+                        if (blobData && blobSize > 0) {
+                            HICON hIcon = LoadIconFromMemory((const unsigned char*)blobData, blobSize);
+                            if (hIcon) {
+                                app.iconIndex = ImageList_AddIcon(g_hImageList, hIcon);
+                                DestroyIcon(hIcon);
+                                iconLoaded = true;
+                            }
+                        }
+                    }
+                    
+                    // If no icon was loaded, use the default brown package icon (index 0)
+                    if (!iconLoaded) {
+                        app.iconIndex = 0;
+                    }
+                    break;
+                }
+            }
+        }
+        sqlite3_finalize(stmt);
+    }
 }
 
 // All old dialog code removed - new dialog is created in WinMain before main window
@@ -964,9 +1570,7 @@ void LoadTags(const std::wstring& filter) {
     }
     g_tagTextBuffers.clear();
     
-    if (!g_db) return;
-    
-    sqlite3_stmt* stmt;
+    if (g_allCategoryNames.empty()) return;  // No data loaded
     
     // Add "All" item - use persistent storage
     std::wstring* allText = new std::wstring(L"   " + g_locale.all);
@@ -982,65 +1586,65 @@ void LoadTags(const std::wstring& filter) {
     int allIndex = ListView_InsertItem(g_hTagTree, &lvi);
     ListView_SetItemState(g_hTagTree, allIndex, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
     
-    // Load categories - show all with 4+ apps, or 1-3 apps if any app would be orphaned without this category
-    std::string sql = "SELECT c.category_name, COUNT(DISTINCT ac.app_id) as cnt "
-                      "FROM categories c "
-                      "LEFT JOIN app_categories ac ON c.id = ac.category_id "
-                      "GROUP BY c.id, c.category_name "
-                      "HAVING cnt >= 4 "
-                      "   OR (cnt > 0 AND EXISTS ( "
-                      "       SELECT 1 FROM app_categories ac2 "
-                      "       WHERE ac2.category_id = c.id "
-                      "       AND (SELECT COUNT(*) FROM app_categories ac3 WHERE ac3.app_id = ac2.app_id) = 1 "
-                      "   )) "
-                      "ORDER BY c.category_name;";
-    
+    // Load categories from in-memory cache
     int itemIndex = 1;
-    if (sqlite3_prepare_v2(g_db, sql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
-        while (sqlite3_step(stmt) == SQLITE_ROW) {
-            const char* name = (const char*)sqlite3_column_text(stmt, 0);
-            if (!name || !name[0]) continue; // Skip NULL or empty names
-            
-            int wsize = MultiByteToWideChar(CP_UTF8, 0, name, -1, nullptr, 0);
-            if (wsize <= 1) continue; // Skip if conversion failed
-            
-            std::wstring tagName(wsize - 1, 0);
-            MultiByteToWideChar(CP_UTF8, 0, name, -1, &tagName[0], wsize);
-            
-            // Trim and skip empty names
-            size_t first = tagName.find_first_not_of(L" \t\r\n");
-            if (first == std::wstring::npos) continue;
-            size_t last = tagName.find_last_not_of(L" \t\r\n");
-            tagName = tagName.substr(first, last - first + 1);
-            
-            // Capitalize first letter
-            tagName = CapitalizeFirst(tagName);
-            
-            // Apply filter
-            if (!filter.empty()) {
-                std::wstring lower_name = tagName;
-                std::wstring lower_filter = filter;
-                std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(), ::towlower);
-                std::transform(lower_filter.begin(), lower_filter.end(), lower_filter.begin(), ::towlower);
-                
-                if (lower_name.find(lower_filter) == std::wstring::npos) {
-                    continue;
-                }
-            }
-            
-            // Store in persistent buffer for ListView to reference
-            std::wstring* displayText = new std::wstring(L"   " + tagName);
-            g_tagTextBuffers.push_back(displayText);
-            
-            lvi.mask = LVIF_TEXT | LVIF_PARAM | LVIF_IMAGE;
-            lvi.iItem = itemIndex++;
-            lvi.iSubItem = 0;
-            lvi.pszText = (LPWSTR)displayText->c_str();
-            lvi.lParam = (LPARAM)displayText; // Store pointer to tag name
-            lvi.iImage = 0; // Closed folder
-            ListView_InsertItem(g_hTagTree, &lvi);
+    int processedCount = 0;
+    for (const auto& categoryName : g_allCategoryNames) {
+        // Process messages every 10 items to keep dialog responsive
+        if (g_hIconLoadingDialog && (++processedCount % 10 == 0)) {
+            ProcessDialogMessages();
         }
-        sqlite3_finalize(stmt);
+        
+        // Get app count for this category (show all with 4+ apps, or categories where apps would be orphaned)
+        auto it = g_categoryToAppIds.find(categoryName);
+        if (it == g_categoryToAppIds.end() || it->second.empty()) continue;
+        
+        int appCount = it->second.size();
+        bool hasOrphanedApps = false;
+        
+        // Check if category has apps that would be orphaned (only in this one category)
+        if (appCount < 4) {
+            for (int appId : it->second) {
+                // Find this app in g_allApps and check how many categories it belongs to
+                for (const auto& app : g_allApps) {
+                    if (app.id == appId) {
+                        if (app.categories.size() == 1) {
+                            hasOrphanedApps = true;
+                            break;
+                        }
+                        break;
+                    }
+                }
+                if (hasOrphanedApps) break;
+            }
+        }
+        
+        // Only show categories with 4+ apps, or categories with orphaned apps
+        if (appCount < 4 && !hasOrphanedApps) continue;
+        
+        // Apply filter if specified
+        if (!filter.empty()) {
+            std::wstring lower_name = categoryName;
+            std::wstring lower_filter = filter;
+            std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(), ::towlower);
+            std::transform(lower_filter.begin(), lower_filter.end(), lower_filter.begin(), ::towlower);
+            
+            if (lower_name.find(lower_filter) == std::wstring::npos) {
+                continue;
+            }
+        }
+        
+        // Store in persistent buffer for ListView to reference
+        std::wstring* displayText = new std::wstring(L"   " + categoryName);
+        g_tagTextBuffers.push_back(displayText);
+        
+        lvi.mask = LVIF_TEXT | LVIF_PARAM | LVIF_IMAGE;
+        lvi.iItem = itemIndex++;
+        lvi.iSubItem = 0;
+        lvi.pszText = (LPWSTR)displayText->c_str();
+        lvi.lParam = (LPARAM)displayText; // Store pointer to tag name
+        lvi.iImage = 0; // Closed folder
+        ListView_InsertItem(g_hTagTree, &lvi);
     }
     
     // Update category count label
@@ -1057,167 +1661,78 @@ void LoadTags(const std::wstring& filter) {
 void LoadApps(const std::wstring& tag, const std::wstring& filter) {
     ListView_DeleteAllItems(g_hAppList);
     
-    if (!g_db) return;
-    
-    sqlite3_stmt* stmt;
-    std::string sql;
+    if (g_allApps.empty()) return;  // No data loaded
     
     int appCount = 0;
+    int index = 0;
+    int processedCount = 0;
     
-    // First, count total apps for progress
-    std::string countSql;
-    if (tag == L"All") {
-        countSql = "SELECT COUNT(*) FROM apps WHERE name IS NOT NULL AND TRIM(name) != ''";
-        if (!filter.empty()) {
-            countSql += " AND (name LIKE ?1 OR publisher LIKE ?1 OR package_id LIKE ?1)";
-        }
-    } else {
-        int size = WideCharToMultiByte(CP_UTF8, 0, tag.c_str(), -1, nullptr, 0, nullptr, nullptr);
-        std::string tagUtf8(size - 1, 0);
-        WideCharToMultiByte(CP_UTF8, 0, tag.c_str(), -1, &tagUtf8[0], size, nullptr, nullptr);
-        
-        countSql = "SELECT COUNT(DISTINCT a.id) FROM apps a "
-                   "JOIN app_categories ac ON a.id = ac.app_id "
-                   "JOIN categories c ON ac.category_id = c.id "
-                   "WHERE c.category_name = ?2 AND a.name IS NOT NULL AND TRIM(a.name) != ''";
-        if (!filter.empty()) {
-            countSql += " AND (a.name LIKE ?1 OR a.publisher LIKE ?1 OR a.package_id LIKE ?1)";
-        }
-    }
-    
-    sqlite3_stmt* countStmt;
-    if (sqlite3_prepare_v2(g_db, countSql.c_str(), -1, &countStmt, nullptr) == SQLITE_OK) {
-        if (!filter.empty()) {
-            std::string filterUtf8;
-            int size = WideCharToMultiByte(CP_UTF8, 0, filter.c_str(), -1, nullptr, 0, nullptr, nullptr);
-            filterUtf8.resize(size - 1);
-            WideCharToMultiByte(CP_UTF8, 0, filter.c_str(), -1, &filterUtf8[0], size, nullptr, nullptr);
-            std::string filterPattern = "%" + filterUtf8 + "%";
-            sqlite3_bind_text(countStmt, 1, filterPattern.c_str(), -1, SQLITE_TRANSIENT);
-        }
-        if (tag != L"All") {
-            int size = WideCharToMultiByte(CP_UTF8, 0, tag.c_str(), -1, nullptr, 0, nullptr, nullptr);
-            std::string tagUtf8(size - 1, 0);
-            WideCharToMultiByte(CP_UTF8, 0, tag.c_str(), -1, &tagUtf8[0], size, nullptr, nullptr);
-            sqlite3_bind_text(countStmt, 2, tagUtf8.c_str(), -1, SQLITE_TRANSIENT);
-        }
-        if (sqlite3_step(countStmt) == SQLITE_ROW) {
-            // Count not needed anymore
-        }
-        sqlite3_finalize(countStmt);
-    }
-    
-    if (tag == L"All") {
-        sql = "SELECT id, package_id, name, version, publisher, homepage, icon_data, icon_type FROM apps WHERE name IS NOT NULL AND TRIM(name) != ''";
-        if (!filter.empty()) {
-            sql += " AND (name LIKE ?1 OR publisher LIKE ?1 OR package_id LIKE ?1)";
-        }
-        sql += " ORDER BY name;";
-    } else {
-        // Convert tag to UTF-8
-        int size = WideCharToMultiByte(CP_UTF8, 0, tag.c_str(), -1, nullptr, 0, nullptr, nullptr);
-        std::string tagUtf8(size - 1, 0);
-        WideCharToMultiByte(CP_UTF8, 0, tag.c_str(), -1, &tagUtf8[0], size, nullptr, nullptr);
-        
-        sql = "SELECT DISTINCT a.id, a.package_id, a.name, a.version, a.publisher, a.homepage, a.icon_data, a.icon_type "
-              "FROM apps a "
-              "JOIN app_categories ac ON a.id = ac.app_id "
-              "JOIN categories c ON ac.category_id = c.id "
-              "WHERE c.category_name = ?2 AND a.name IS NOT NULL AND TRIM(a.name) != ''";
-        if (!filter.empty()) {
-            sql += " AND (a.name LIKE ?1 OR a.publisher LIKE ?1 OR a.package_id LIKE ?1)";
-        }
-        sql += " ORDER BY a.name;";
-    }
-    
-    if (sqlite3_prepare_v2(g_db, sql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
-        if (!filter.empty()) {
-            std::string filterUtf8;
-            int size = WideCharToMultiByte(CP_UTF8, 0, filter.c_str(), -1, nullptr, 0, nullptr, nullptr);
-            filterUtf8.resize(size - 1);
-            WideCharToMultiByte(CP_UTF8, 0, filter.c_str(), -1, &filterUtf8[0], size, nullptr, nullptr);
-            std::string filterPattern = "%" + filterUtf8 + "%";
-            sqlite3_bind_text(stmt, 1, filterPattern.c_str(), -1, SQLITE_TRANSIENT);
+    // Filter apps from in-memory cache
+    for (const auto& app : g_allApps) {
+        // Process messages every 50 items to keep dialog responsive
+        if (g_hIconLoadingDialog && (++processedCount % 50 == 0)) {
+            ProcessDialogMessages();
         }
         
-        if (tag != L"All") {
-            int size = WideCharToMultiByte(CP_UTF8, 0, tag.c_str(), -1, nullptr, 0, nullptr, nullptr);
-            std::string tagUtf8(size - 1, 0);
-            WideCharToMultiByte(CP_UTF8, 0, tag.c_str(), -1, &tagUtf8[0], size, nullptr, nullptr);
-            sqlite3_bind_text(stmt, 2, tagUtf8.c_str(), -1, SQLITE_TRANSIENT);
-        }
-        
-        int index = 0;
-        while (sqlite3_step(stmt) == SQLITE_ROW) {
-            AppInfo* app = new AppInfo();
-            app->id = sqlite3_column_int(stmt, 0);
-            
-            // Convert UTF-8 to wide strings with better error handling
-            auto convert = [](const char* utf8) -> std::wstring {
-                if (!utf8 || !utf8[0]) return L"";
-                
-                int wsize = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8, -1, nullptr, 0);
-                if (wsize == 0) {
-                    // UTF-8 conversion failed, try as ANSI
-                    wsize = MultiByteToWideChar(CP_ACP, 0, utf8, -1, nullptr, 0);
-                    if (wsize == 0) return L"[Invalid encoding]";
-                    
-                    std::wstring result(wsize - 1, 0);
-                    MultiByteToWideChar(CP_ACP, 0, utf8, -1, &result[0], wsize);
-                    return result;
-                }
-                
-                std::wstring result(wsize - 1, 0);
-                MultiByteToWideChar(CP_UTF8, 0, utf8, -1, &result[0], wsize);
-                return result;
-            };
-            
-            app->packageId = convert((const char*)sqlite3_column_text(stmt, 1));
-            app->name = convert((const char*)sqlite3_column_text(stmt, 2));
-            app->version = convert((const char*)sqlite3_column_text(stmt, 3));
-            app->publisher = convert((const char*)sqlite3_column_text(stmt, 4));
-            app->homepage = convert((const char*)sqlite3_column_text(stmt, 5));
-            app->iconIndex = -1;
-            
-            // Load icon from the current query result (columns 6 and 7)
-            if (sqlite3_column_type(stmt, 6) == SQLITE_BLOB) {
-                const void* blobData = sqlite3_column_blob(stmt, 6);
-                int blobSize = sqlite3_column_bytes(stmt, 6);
-                
-                if (blobData && blobSize > 0) {
-                    // Load icon from BLOB into image list
-                    HICON hIcon = LoadIconFromMemory((const unsigned char*)blobData, blobSize);
-                    if (hIcon) {
-                        app->iconIndex = ImageList_AddIcon(g_hImageList, hIcon);
-                        DestroyIcon(hIcon);
-                    }
+        // Check if app belongs to selected category
+        bool categoryMatch = false;
+        if (tag == L"All") {
+            categoryMatch = true;
+        } else {
+            // Check if app has this category
+            for (const auto& cat : app.categories) {
+                if (cat == tag) {
+                    categoryMatch = true;
+                    break;
                 }
             }
-            
-            // Add to list view
-            LVITEMW lvi = {};
-            lvi.mask = LVIF_TEXT | LVIF_PARAM | LVIF_IMAGE;
-            lvi.iItem = index++;
-            lvi.iSubItem = 0;
-            // Add spaces before name for spacing from icon
-            std::wstring displayName = L"   " + app->name;
-            lvi.pszText = (LPWSTR)displayName.c_str();
-            lvi.lParam = (LPARAM)app;
-            lvi.iImage = app->iconIndex >= 0 ? app->iconIndex : 0;
-            ListView_InsertItem(g_hAppList, &lvi);
-            
-            ListView_SetItemText(g_hAppList, lvi.iItem, 1, (LPWSTR)app->version.c_str());
-            ListView_SetItemText(g_hAppList, lvi.iItem, 2, (LPWSTR)app->publisher.c_str());
-            
-            appCount++;
         }
-        sqlite3_finalize(stmt);
+        
+        if (!categoryMatch) continue;
+        
+        // Apply filter if specified
+        if (!filter.empty()) {
+            std::wstring lower_name = app.name;
+            std::wstring lower_publisher = app.publisher;
+            std::wstring lower_packageId = app.packageId;
+            std::wstring lower_filter = filter;
+            
+            std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(), ::towlower);
+            std::transform(lower_publisher.begin(), lower_publisher.end(), lower_publisher.begin(), ::towlower);
+            std::transform(lower_packageId.begin(), lower_packageId.end(), lower_packageId.begin(), ::towlower);
+            std::transform(lower_filter.begin(), lower_filter.end(), lower_filter.begin(), ::towlower);
+            
+            if (lower_name.find(lower_filter) == std::wstring::npos &&
+                lower_publisher.find(lower_filter) == std::wstring::npos &&
+                lower_packageId.find(lower_filter) == std::wstring::npos) {
+                continue;
+            }
+        }
+        
+        // Create a copy of the app for ListView (using new to persist beyond this function)
+        AppInfo* appCopy = new AppInfo(app);
+        
+        // Add to list view
+        LVITEMW lvi = {};
+        lvi.mask = LVIF_TEXT | LVIF_PARAM | LVIF_IMAGE;
+        lvi.iItem = index++;
+        lvi.iSubItem = 0;
+        // Add spaces before name for spacing from icon
+        std::wstring displayName = L"   " + appCopy->name;
+        lvi.pszText = (LPWSTR)displayName.c_str();
+        lvi.lParam = (LPARAM)appCopy;
+        // Use iconIndex if valid, otherwise use 0 (brown package icon)
+        lvi.iImage = (appCopy->iconIndex >= 0) ? appCopy->iconIndex : 0;
+        ListView_InsertItem(g_hAppList, &lvi);
+        
+        ListView_SetItemText(g_hAppList, lvi.iItem, 1, (LPWSTR)appCopy->version.c_str());
+        ListView_SetItemText(g_hAppList, lvi.iItem, 2, (LPWSTR)appCopy->publisher.c_str());
+        
+        appCount++;
     }
     
     // Update app count label
-    // First clear with spaces
     SetWindowTextW(g_hAppCountLabel, L"                                        ");
-    // Then set actual text
     std::wstring countText = FormatNumber(appCount) + L" " + g_locale.apps;
     SetWindowTextW(g_hAppCountLabel, countText.c_str());
 }
@@ -1265,23 +1780,8 @@ void OnTagSelectionChanged() {
         SetWindowTextW(g_hCategoryLabel, (*(std::wstring*)item.lParam).c_str());
     }
     
-    // Get app search filter
-    wchar_t searchText[256] = {};
-    GetWindowTextW(g_hAppSearch, searchText, 256);
-    
-    LoadApps(g_selectedTag, Trim(searchText));
-}
-
-void OnTagSearchChanged() {
-    wchar_t searchText[256] = {};
-    GetWindowTextW(g_hTagSearch, searchText, 256);
-    LoadTags(Trim(searchText));
-}
-
-void OnAppSearchChanged() {
-    wchar_t searchText[256] = {};
-    GetWindowTextW(g_hAppSearch, searchText, 256);
-    LoadApps(g_selectedTag, Trim(searchText));
+    // Load apps for selected category (no filter)
+    LoadApps(g_selectedTag, L"");
 }
 
 void OnAppDoubleClick() {
@@ -1377,6 +1877,8 @@ bool LoadLocale(const std::wstring& lang) {
             else if (key == L"all") g_locale.all = value;
             else if (key == L"title") g_locale.title = value;
             else if (key == L"processing_database") g_locale.processing_database = value;
+            else if (key == L"wait_moment") g_locale.wait_moment = value;
+            else if (key == L"repopulating_table") g_locale.repopulating_table = value;
         }
     }
 
@@ -1421,10 +1923,6 @@ void OnLanguageChanged() {
     if (LoadLocale(newLang)) {
         // Update window title
         SetWindowTextW(GetParent(g_hLangCombo), g_locale.title.c_str());
-
-        // Update cue banners
-        SendMessageW(g_hTagSearch, EM_SETCUEBANNER, TRUE, (LPARAM)g_locale.search_tags.c_str());
-        SendMessageW(g_hAppSearch, EM_SETCUEBANNER, TRUE, (LPARAM)g_locale.search_apps.c_str());
 
         // Reload tags and apps to update counts and "All" label
         LoadTags();

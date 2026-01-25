@@ -1,11 +1,54 @@
 #include <windows.h>
 #include "resource.h"
+#include <commctrl.h>
 
 // Application icon
 IDI_APP_ICON ICON "wpm_logo.ico"
 
 // Logo bitmap (PNG)
 IDB_PNG1 RCDATA "wpm_logo.png"
+
+// Loading dialog
+IDD_LOADING_DIALOG DIALOGEX 0, 0, 250, 65
+STYLE DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION
+CAPTION "Wait a moment...."
+FONT 9, "Segoe UI", 700
+BEGIN
+    ICON            32516, IDC_LOADING_ICON, 15, 15, 21, 20
+    LTEXT           "Repopulating table...", IDC_LOADING_TEXT, 45, 15, 190, 10, SS_CENTER
+    LTEXT           "", IDC_LOADING_ANIMATE, 45, 30, 190, 30, SS_CENTER
+END
+
+// Search dialog
+IDD_SEARCH_DIALOG DIALOGEX 0, 0, 450, 280
+STYLE DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Search"
+FONT 9, "Segoe UI"
+BEGIN
+    LTEXT           "Search in Categories:", -1, 10, 10, 430, 10
+    EDITTEXT        IDC_SEARCH_CATEGORY, 10, 22, 430, 14, ES_AUTOHSCROLL
+    
+    LTEXT           "Search in Applications:", -1, 10, 45, 430, 10
+    EDITTEXT        IDC_SEARCH_APP, 10, 57, 430, 14, ES_AUTOHSCROLL
+    
+    GROUPBOX        "Search Options", -1, 10, 80, 430, 75
+    
+    AUTORADIOBUTTON "Case Insensitive", IDC_CASE_INSENSITIVE, 20, 95, 100, 10, WS_GROUP
+    AUTORADIOBUTTON "Case Sensitive", IDC_CASE_SENSITIVE, 130, 95, 100, 10
+    
+    AUTORADIOBUTTON "Contains", IDC_CONTAINS, 20, 110, 100, 10, WS_GROUP
+    AUTORADIOBUTTON "Exact Match", IDC_EXACT_MATCH, 130, 110, 100, 10
+    
+    AUTOCHECKBOX    "Use Regular Expression", IDC_USE_REGEX, 20, 125, 150, 10
+    
+    AUTORADIOBUTTON "Search All", IDC_SEARCH_ALL, 20, 140, 100, 10, WS_GROUP
+    AUTORADIOBUTTON "Refine Previous Results", IDC_REFINE_RESULTS, 130, 140, 150, 10
+    
+    LTEXT           "Leave category search empty to search all categories.\nLeave application search empty to show all applications in filtered categories.", -1, 10, 165, 430, 20
+    
+    DEFPUSHBUTTON   "Search", IDOK, 285, 250, 70, 20
+    PUSHBUTTON      "Cancel", IDCANCEL, 365, 250, 70, 20
+END
 
 // Version information
 VS_VERSION_INFO VERSIONINFO
