@@ -2,6 +2,46 @@
 Notes for future versioned changelog
 
 =====================================
+Date: 2026-01-26 (Update 3 - Installed Apps Sync Fixed)
+Component: WinProgramManager / WinProgramUpdater
+
+BUGFIX: Winget List Parsing Now Working
+---------------------------------------------------------
+- Fixed SyncInstalledApps() function in WinProgramUpdater.cpp
+- Winget list output successfully parsed: 47-52 installed apps detected
+- Changed parsing strategy from left-to-right column positions to right-to-left tokenization
+
+PARSING STRATEGY (Right-to-Left):
+- Split line into tokens by whitespace
+- Rightmost token: Source (e.g., "winget") - must have NO digits
+- Second from right: Version number
+- Third from right: Package ID
+- Remaining tokens: Application name
+- Handles lines with and without Source column
+
+VALIDATION LOGIC:
+- Reject lines where rightmost token contains any digit (malformed entries)
+- Require package ID to contain at least one dot or backslash
+- Skip header, separator, and empty lines
+- Filter out version-only IDs
+
+REGIONAL COMPATIBILITY:
+- Handles Greek regional settings with 60+ second winget response times
+- Added --disable-interactivity flag to winget commands
+- INFINITE wait in WaitForSingleObject handles regional latency
+- No timeout issues despite slow winget responses
+
+DATABASE RESULTS:
+- Successfully populates installed_apps table on update
+- 47 valid entries from 52 parsed packages (validation filters some)
+- Installed filter now shows user's actual installed applications
+- Real-time tracking of installation status
+
+STEP 8 OUTPUT:
+Before: "Found 0 installed packages"
+After: "Found 52 installed packages" → 47 valid entries in database
+
+=====================================
 Date: 2026-01-25 (Update 2 - Installed Apps Filter)
 Component: WinProgramManager
 

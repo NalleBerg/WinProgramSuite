@@ -1,6 +1,6 @@
 # WinProgramSuite — Complete Windows Package Management System
 
-**Latest Update:** 25 January 2026 | **Installed Apps Filter Complete**
+**Latest Update:** 26 January 2026 | **Installed Apps Sync Working**
 
 **WinProgramSuite** is a comprehensive package management system for Windows, combining database-driven package metadata management with a friendly GUI for updates. Built on Microsoft's `winget` package manager with advanced categorization, search, filtering, and analysis capabilities.
 
@@ -19,7 +19,9 @@ Database builder and metadata management system for Windows packages.
 - Enhanced category navigation with visual folder icons
 - Folder icons dynamically open/close based on selection
 - Advanced search with multi-field filtering and regex support
-- Installed apps filter with database integration
+- Installed apps filter with working database synchronization
+- Parses winget list output using right-to-left tokenization
+- Handles regional latency (tested with Greek Windows, 60+ second delays)
 - Full-text search ready (FTS5 compatible)
 - Automatic tag inference from co-occurrence patterns
 - Professional startup dialog with animated spinner and i18n support

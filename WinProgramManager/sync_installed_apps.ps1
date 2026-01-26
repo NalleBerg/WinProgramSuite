@@ -10,7 +10,7 @@ $ErrorActionPreference = "Continue"
 $OutputEncoding = [System.Text.Encoding]::UTF8
 
 $scriptDir = $PSScriptRoot
-$dbPath = Join-Path $scriptDir "WinProgramManager.db"
+$dbPath = Join-Path $scriptDir "WinProgramManager\WinProgramManager.db"
 $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 
 Write-Host "=== Syncing Installed Apps ===" -ForegroundColor Cyan

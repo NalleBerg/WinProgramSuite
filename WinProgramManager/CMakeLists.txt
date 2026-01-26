@@ -46,8 +46,10 @@ else()
     target_compile_options(WinProgramManager PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-# Updater executable (console version for testing)
-add_executable(WinProgramUpdater
+# Updater executable (silent/GUI version for Task Scheduler)
+# NOTE: Both updater executables share the same source files (updater_main.cpp, WinProgramUpdater.cpp)
+# If you modify the source, rebuild both executables!
+add_executable(WinProgramUpdater WIN32
     updater_main.cpp
     WinProgramUpdater.cpp
     WinProgramUpdater.h
@@ -67,15 +69,51 @@ target_link_libraries(WinProgramUpdater
 
 # Link options for MinGW
 if(MINGW)
-    target_link_options(WinProgramUpdater PRIVATE -municode -mconsole)
+    target_link_options(WinProgramUpdater PRIVATE -municode -mwindows)
 endif()
 
 # Enable Unicode
-target_compile_definitions(WinProgramUpdater PRIVATE UNICODE _UNICODE _CONSOLE)
+target_compile_definitions(WinProgramUpdater PRIVATE UNICODE _UNICODE)
 
 # Compiler warnings
 if(MSVC)
     target_compile_options(WinProgramUpdater PRIVATE /W4)
 else()
     target_compile_options(WinProgramUpdater PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+# Updater executable (console version for manual testing/debugging)
+# NOTE: Both updater executables share the same source files (updater_main.cpp, WinProgramUpdater.cpp)
+# If you modify the source, rebuild both executables!
+add_executable(WinProgramUpdaterConsole
+    updater_main.cpp
+    WinProgramUpdater.cpp
+    WinProgramUpdater.h
+)
+
+# Include SQLite3 headers
+target_include_directories(WinProgramUpdaterConsole PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/sqlite3
+)
+
+# Link SQLite3 DLL and Windows libraries
+target_link_libraries(WinProgramUpdaterConsole
+    ${CMAKE_CURRENT_SOURCE_DIR}/sqlite3/sqlite3.dll
+    shell32
+    ole32
+)
+
+# Link options for MinGW
+if(MINGW)
+    target_link_options(WinProgramUpdaterConsole PRIVATE -municode -mconsole)
+endif()
+
+# Enable Unicode
+target_compile_definitions(WinProgramUpdaterConsole PRIVATE UNICODE _UNICODE _CONSOLE)
+
+# Compiler warnings
+if(MSVC)
+    target_compile_options(WinProgramUpdaterConsole PRIVATE /W4)
+else()
+    target_compile_options(WinProgramUpdaterConsole PRIVATE -Wall -Wextra -Wpedantic)
 endif()

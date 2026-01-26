@@ -1,3 +1,9 @@
+// NOTE: This file is shared between WinProgramUpdater.exe (silent/GUI) and 
+// WinProgramUpdaterConsole.exe (with console output). If you modify this file,
+// both executables need to be rebuilt. They differ only in their subsystem:
+// - WinProgramUpdater.exe: WIN32 subsystem (no console window)
+// - WinProgramUpdaterConsole.exe: CONSOLE subsystem (shows output)
+
 #include "WinProgramUpdater.h"
 #include <windows.h>
 #include <iostream>

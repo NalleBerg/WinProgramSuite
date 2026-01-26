@@ -50,6 +50,9 @@ public:
     // Logging
     void WriteAppDataLog(const UpdateStats& stats, const std::string& duration);
 
+    // Installed apps sync
+    bool SyncInstalledApps();
+
 private:
     // Database operations
     bool OpenDatabase();

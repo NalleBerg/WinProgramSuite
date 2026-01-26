@@ -17,14 +17,14 @@ echo Using generator: %GENERATOR%
 echo Build configuration: %CONFIG%
 
 REM ============================================================================
-REM Backup production database with timestamp - keep only 10 most recent backups
+REM Backup production database FROM packaged directory - keep only 10 most recent backups
 REM ============================================================================
-if exist "WinProgramManager\WinProgramManager.db" (
-    echo Backing up production database...
+if exist "WinProgramManager\WinProgramManager\WinProgramManager.db" (
+    echo Backing up production database from packaged directory...
     if not exist "..\DB" mkdir "..\DB"
     
     REM Use PowerShell to backup and manage old backups
-    powershell -NoProfile -Command "$timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'; Copy-Item 'WinProgramManager\WinProgramManager.db' \"..\DB\WinProgramManager_$timestamp.db\" -Force; Write-Host \"Database backed up to: ..\DB\WinProgramManager_$timestamp.db\"; Get-ChildItem '..\DB\WinProgramManager_*.db' | Sort-Object LastWriteTime -Descending | Select-Object -Skip 10 | Remove-Item -Force -ErrorAction SilentlyContinue"
+    powershell -NoProfile -Command "$timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'; Copy-Item 'WinProgramManager\WinProgramManager\WinProgramManager.db' \"..\DB\WinProgramManager_$timestamp.db\" -Force; Write-Host \"Database backed up to: ..\DB\WinProgramManager_$timestamp.db\"; Get-ChildItem '..\DB\WinProgramManager_*.db' | Sort-Object LastWriteTime -Descending | Select-Object -Skip 10 | Remove-Item -Force -ErrorAction SilentlyContinue"
     
     echo Backup complete.
     echo.
@@ -113,6 +113,12 @@ if exist "%BUILD_DIR%\WinProgramUpdater.exe" (
 ) else (
     echo [WARN] WinProgramUpdater.exe not found: %BUILD_DIR%\WinProgramUpdater.exe
 )
+if exist "%BUILD_DIR%\WinProgramUpdaterConsole.exe" (
+    copy /Y "%BUILD_DIR%\WinProgramUpdaterConsole.exe" "%PACKAGE_DIR%\WinProgramUpdaterConsole.exe" >nul 2>&1
+    echo WinProgramUpdaterConsole.exe packaged.
+) else (
+    echo [WARN] WinProgramUpdaterConsole.exe not found: %BUILD_DIR%\WinProgramUpdaterConsole.exe
+)
 REM Copy additional files if needed
 if exist "README.md" copy /Y "README.md" "%PACKAGE_DIR%\README.md" >nul 2>&1
 if exist "LICENSE.md" copy /Y "LICENSE.md" "%PACKAGE_DIR%\LICENSE.md" >nul 2>&1
@@ -131,8 +137,11 @@ REM Database already exists in package directory
 echo Packaged to %PACKAGE_DIR%.
 echo Build complete!
 echo.
-echo To run the updater:
+echo To run the updater (silent for Task Scheduler):
 echo   WinProgramManager\WinProgramUpdater.exe
+echo.
+echo To run the updater with console output (for testing):
+echo   WinProgramManager\WinProgramUpdaterConsole.exe
 echo.
 echo Log file:
 echo   %%APPDATA%%\WinProgramManager\log\WinProgramUpdater.log

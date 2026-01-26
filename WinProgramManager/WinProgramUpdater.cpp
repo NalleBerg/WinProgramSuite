@@ -307,7 +307,7 @@ void WinProgramUpdater::AddTag(const std::string& packageId, const std::string& 
 
 std::string WinProgramUpdater::ExecuteWingetCommand(const std::string& command) {
     // Use cmd.exe to run winget (winget is not a .exe but a Windows package)
-    std::string fullCmd = "cmd.exe /c winget " + command + " --accept-source-agreements";
+    std::string fullCmd = "cmd.exe /c winget " + command + " --accept-source-agreements --disable-interactivity";
     std::string result;
     
     HANDLE hReadPipe, hWritePipe;
@@ -497,7 +497,7 @@ std::vector<std::string> WinProgramUpdater::GetDeletedPackages() {
     // Find packages in main DB but not in search DB
     const char* sql = 
         "SELECT package_id FROM apps "
-        "WHERE package_id NOT IN (SELECT package_id FROM search_results);";
+        "WHERE package_id NOT IN (SELECT package_id FROM search_db.search_results);";
     
     sqlite3_stmt* stmt;
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) == SQLITE_OK) {
@@ -853,6 +853,12 @@ void WinProgramUpdater::TagUncategorized(UpdateStats& stats) {
 bool WinProgramUpdater::UpdateDatabase(UpdateStats& stats) {
     auto startTime = std::chrono::high_resolution_clock::now();
     
+    // Clear search cache to ensure fresh data
+#ifdef _CONSOLE
+    std::wcout << L"Clearing search cache..." << std::endl;
+#endif
+    DeleteFileW(L"WinProgramsSearch.db");
+    
     if (!OpenDatabase()) {
         return false;
     }
@@ -1009,6 +1015,20 @@ bool WinProgramUpdater::UpdateDatabase(UpdateStats& stats) {
     std::wcout << L"\n=== Step 7: Tag uncategorized ===" << std::endl;
 #endif
     TagUncategorized(stats);
+    
+    // Step 8: Sync installed apps
+#ifdef _CONSOLE
+    std::wcout << L"\n=== Step 8: Sync installed apps ===" << std::endl;
+#endif
+    if (SyncInstalledApps()) {
+#ifdef _CONSOLE
+        std::wcout << L"   Installed apps synced successfully" << std::endl;
+#endif
+    } else {
+#ifdef _CONSOLE
+        std::wcout << L"   Failed to sync installed apps" << std::endl;
+#endif
+    }
     
     stats.tagsAdded = stats.tagsFromWinget + stats.tagsFromInference + stats.tagsFromCorrelation;
     
@@ -1193,4 +1213,161 @@ std::string WinProgramUpdater::WStringToString(const std::wstring& wstr) {
     std::string result(size - 1, 0);  // Exclude null terminator
     WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, &result[0], size, nullptr, nullptr);
     return result;
+}
+
+bool WinProgramUpdater::SyncInstalledApps() {
+    if (!db_) return false;
+    
+    // Create installed_apps table if it doesn't exist
+    const char* createTableSql = 
+        "CREATE TABLE IF NOT EXISTS installed_apps ("
+        "    package_id TEXT PRIMARY KEY,"
+        "    installed_date TEXT,"
+        "    last_seen TEXT,"
+        "    installed_version TEXT,"
+        "    source TEXT,"
+        "    FOREIGN KEY (package_id) REFERENCES apps(package_id)"
+        ");"
+        "CREATE INDEX IF NOT EXISTS idx_installed_last_seen ON installed_apps(last_seen);";
+    
+    if (!ExecuteSQL(createTableSql)) {
+        return false;
+    }
+    
+    // Get current timestamp
+    auto now = std::chrono::system_clock::now();
+    auto time_t_now = std::chrono::system_clock::to_time_t(now);
+    std::tm tm_now;
+    localtime_s(&tm_now, &time_t_now);
+    char timestamp[32];
+    std::strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", &tm_now);
+    
+    // Execute winget list to get installed packages
+    std::string output = ExecuteWingetCommand("list");
+    if (output.empty()) {
+        return false;
+    }
+    
+    // Parse winget list output
+    // Format: Name  Id  Version  Available  Source
+    // Parse from right to left: rightmost is Source (or Version if no Source), then Version, then Id
+    std::istringstream stream(output);
+    std::string line;
+    bool pastHeader = false;
+    
+    std::vector<std::tuple<std::string, std::string, std::string>> installedPackages; // (id, version, source)
+    
+    while (std::getline(stream, line)) {
+        // Skip empty or very short lines
+        if (line.length() < 10) continue;
+        
+        // Skip header line
+        if (line.find("Name") != std::string::npos && line.find("Id") != std::string::npos) {
+            pastHeader = true;
+            continue;
+        }
+        
+        // Skip separator line (dashes)
+        if (line.find("---") != std::string::npos) {
+            pastHeader = true;
+            continue;
+        }
+        
+        if (!pastHeader) continue;
+        
+        // Split line into tokens by whitespace
+        std::vector<std::string> tokens;
+        std::istringstream tokenStream(line);
+        std::string token;
+        while (tokenStream >> token) {
+            tokens.push_back(token);
+        }
+        
+        // Need at least 2 tokens (Name and Id)
+        if (tokens.size() < 2) continue;
+        
+        // Parse from right to left
+        // If rightmost token contains at least one digit, skip this line (malformed)
+        std::string rightmost = tokens.back();
+        bool hasDigit = false;
+        for (char c : rightmost) {
+            if (std::isdigit(c)) {
+                hasDigit = true;
+                break;
+            }
+        }
+        if (hasDigit) continue;
+        
+        // Extract fields from right to left
+        std::string source, version, id;
+        
+        if (tokens.size() >= 3) {
+            source = tokens[tokens.size() - 1];  // Rightmost
+            version = tokens[tokens.size() - 2]; // Second from right
+            id = tokens[tokens.size() - 3];      // Third from right (ID)
+        } else if (tokens.size() == 2) {
+            // No source column
+            version = tokens[tokens.size() - 1];
+            id = tokens[tokens.size() - 2];
+        }
+        
+        // Validate ID (should contain at least one dot or backslash for package IDs)
+        if (id.empty() || (id.find('.') == std::string::npos && id.find('\\') == std::string::npos)) continue;
+        
+        installedPackages.push_back(std::make_tuple(id, version, source));
+    }
+    
+    // Update database with installed packages
+#ifdef _CONSOLE
+    std::wcout << L"   Found " << installedPackages.size() << L" installed packages" << std::endl;
+#endif
+    
+    for (const auto& pkg : installedPackages) {
+        std::string id = std::get<0>(pkg);
+        std::string version = std::get<1>(pkg);
+        std::string source = std::get<2>(pkg);
+        
+        // Check if already exists
+        std::string checkSql = "SELECT installed_date FROM installed_apps WHERE package_id = ?;";
+        sqlite3_stmt* stmt;
+        std::string installedDate = timestamp;
+        
+        if (sqlite3_prepare_v2(db_, checkSql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
+            sqlite3_bind_text(stmt, 1, id.c_str(), -1, SQLITE_STATIC);
+            if (sqlite3_step(stmt) == SQLITE_ROW) {
+                // Package exists, keep original install date
+                const unsigned char* date = sqlite3_column_text(stmt, 0);
+                if (date) {
+                    installedDate = reinterpret_cast<const char*>(date);
+                }
+            }
+            sqlite3_finalize(stmt);
+        }
+        
+        // Insert or update
+        std::string upsertSql = 
+            "INSERT OR REPLACE INTO installed_apps (package_id, installed_date, last_seen, installed_version, source) "
+            "VALUES (?, ?, ?, ?, ?);";
+        
+        if (sqlite3_prepare_v2(db_, upsertSql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
+            sqlite3_bind_text(stmt, 1, id.c_str(), -1, SQLITE_STATIC);
+            sqlite3_bind_text(stmt, 2, installedDate.c_str(), -1, SQLITE_STATIC);
+            sqlite3_bind_text(stmt, 3, timestamp, -1, SQLITE_STATIC);
+            sqlite3_bind_text(stmt, 4, version.c_str(), -1, SQLITE_STATIC);
+            sqlite3_bind_text(stmt, 5, source.c_str(), -1, SQLITE_STATIC);
+            sqlite3_step(stmt);
+            sqlite3_finalize(stmt);
+        }
+    }
+    
+    // Remove packages that are no longer installed (not seen in this sync)
+    std::string deleteSql = "DELETE FROM installed_apps WHERE last_seen != ?;";
+    sqlite3_stmt* deleteStmt;
+    if (sqlite3_prepare_v2(db_, deleteSql.c_str(), -1, &deleteStmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(deleteStmt, 1, timestamp, -1, SQLITE_STATIC);
+        sqlite3_step(deleteStmt);
+        sqlite3_finalize(deleteStmt);
+    }
+    
+    return true;
 }
