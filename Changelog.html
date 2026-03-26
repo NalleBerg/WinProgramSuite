@@ -1,7 +1,14 @@
 <h2 style="text-align: center; background-color: #e8f4f8; padding: 15px; border-radius: 5px; margin-bottom: 20px;"><span style="color: #0066cc;">📦 WinProgramSuite &mdash; Complete Windows Package Management System</span></h2>
 <h3 style="text-align: center;">&nbsp;</h3>
-<p style="text-align: center; font-size: 14px; color: #666; margin-bottom: 30px;"><strong>Latest Update:</strong> 21 February 2026 | <strong>Shared Database Location</strong><br />This changelog covers <strong>WinProgramManager</strong>, the database management component of the WinProgramSuite.<br />For automatic update features, see <strong>WinUpdate</strong> documentation.</p>
-<h3 style="text-align: center;"><span style="color: #ff0000;">WinProgramManager Version 2026.02.21.07 — Update 21</span></h3>
+<p style="text-align: center; font-size: 14px; color: #666; margin-bottom: 30px;"><strong>Latest Update:</strong> 26 March 2026 | <strong>Bug fixes &amp; cleanup</strong><br />This changelog covers <strong>WinProgramManager</strong> and <strong>WinUpdate</strong>, the components of WinProgramSuite.<br />For automatic update features, see <strong>WinUpdate</strong> documentation.</p>
+<h3 style="text-align: center;"><span style="color: #ff0000;">WinProgramSuite Version 2026.03.26.07</span></h3>
+<p><strong>Bug fixes &amp; cleanup (26 March 2026):</strong></p>
+<ul>
+<li><strong>WinUpdate — Norwegian cancel button fix:</strong> The skip/unskip confirmation dialog showed &ldquo;OK&rdquo; instead of &ldquo;Avbryt&rdquo; for the cancel button in the Norwegian (Bokmål) locale. Fixed <code>btn_cancel</code> in <code>nb_NO.txt</code>.</li>
+<li><strong>WinProgramManager — removed first-run DB migration:</strong> The runtime code that moved <code>WinProgramManager.db</code> from the install folder to <code>C:\ProgramData\WinProgramManager\</code> ran without administrator rights, causing an error message on first launch. The migration code has been removed from <code>db_path_utils.h</code>, <code>main.cpp</code>, <code>updater_gui.cpp</code>, and <code>updater_main.cpp</code>. The installer now places the database directly in the correct location.</li>
+</ul>
+<h3 style="text-align: center;">&nbsp;</h3>
+<h3 style="text-align: center;"><span style="color: #ff0000;">WinProgramManager Version 2026.02.21.07</span></h3>
 <p><strong>Shared Database Location (21 February 2026):</strong></p>
 <ul>
 <li><strong>Centralized Database Storage:</strong> Database now stored in <code>C:\ProgramData\WinProgramManager\WinProgramManager.db</code> instead of per-user installation directory</li>

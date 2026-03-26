@@ -2,10 +2,18 @@
 
 Automatic database updater for WinProgramManager. Runs silently in the background to keep the package database synchronized with the winget repository.
 
+## Version Information
+
+- **Version**: 2026.02.21.07
+- **Published**: February 21, 2026
+- **Major Changes**: Database migration to ProgramData for multi-user support
+
 ## Features
 
 - **Fully Automated**: No user intervention required
-- **Hidden Execution**: Runs without visible windows
+- **Hidden Execution**: Runs without visible windows or with GUI interface
+- **Multi-User Support**: Databases stored in `C:\ProgramData\WinProgramManager` (shared for all users)
+- **Automatic Migration**: Moves databases from installation directory to ProgramData on first run
 - **Complete Update Pipeline**:
   1. Fetches current winget package list
   2. Adds new packages to database
@@ -16,17 +24,28 @@ Automatic database updater for WinProgramManager. Runs silently in the backgroun
   7. Runs correlation analysis (66.67% threshold)
   8. Tags remaining packages as "uncategorized"
 
+## Database Locations
+
+### Runtime Location (Multi-User Shared)
+- **Main Database**: `C:\ProgramData\WinProgramManager\WinProgramManager.db`
+- **Search Database**: `C:\ProgramData\WinProgramManager\WinProgramsSearch.db`
+
+### Distribution
+- Databases ship with the installer in the executable directory
+- Automatically migrated to ProgramData on first run by any user
+- All users share the same database instance
+
 ## Logging
 
-**Location**: `%APPDATA%\WinUpdate\WinProgramUpdaterLog.txt`
+**Location**: `%APPDATA%\WinProgramManager\log\WinProgramUpdater.log`
 
 **Format**:
 ```
-Run time: 2026.01.18-14:30:45
+Run time: 2026.02.21-14:30:45
 Added: 15 items
 Removed: 3 items
 
-Run time: 2026.01.11-02:15:32
+Run time: 2026.02.18-02:15:32
 Added: 8 items
 Removed: 1 items
 ```

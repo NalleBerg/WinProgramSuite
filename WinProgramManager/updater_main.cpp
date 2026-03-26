@@ -5,6 +5,7 @@
 // - WinProgramUpdaterConsole.exe: CONSOLE subsystem (shows output)
 
 #include "WinProgramUpdater.h"
+#include "db_path_utils.h"
 #include <windows.h>
 #include <iostream>
 
@@ -14,18 +15,21 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     (void)pCmdLine;
     (void)nCmdShow;
     
-    // Get database path (same directory as executable)
+    // Get database path from ProgramData (placed there by the installer)
+    std::wstring dbPath = GetDatabasePath();
+    if (dbPath.empty()) {
+        MessageBoxW(NULL, L"Failed to get database path from ProgramData.", 
+                    L"Database Error", MB_ICONERROR | MB_OK);
+        return 1;
+    }
+    
+    // Get executable directory for setting working directory
     wchar_t exePath[MAX_PATH];
     GetModuleFileNameW(nullptr, exePath, MAX_PATH);
-    
-    std::wstring dbPath = exePath;
-    size_t lastSlash = dbPath.find_last_of(L"\\/");
     std::wstring exeDir;
+    size_t lastSlash = std::wstring(exePath).find_last_of(L"\\/");
     if (lastSlash != std::wstring::npos) {
-        exeDir = dbPath.substr(0, lastSlash + 1);
-        dbPath = exeDir + L"WinProgramManager.db";
-    } else {
-        dbPath = L"WinProgramManager.db";
+        exeDir = std::wstring(exePath).substr(0, lastSlash + 1);
     }
     
     // Set working directory to executable location for portable relative paths
@@ -48,18 +52,20 @@ int main(int argc, char* argv[]) {
     (void)argc;
     (void)argv;
     
-    // Get database path
+    // Get database path from ProgramData (placed there by the installer)
+    std::wstring dbPath = GetDatabasePath();
+    if (dbPath.empty()) {
+        std::wcerr << L"Failed to get database path from ProgramData." << std::endl;
+        return 1;
+    }
+    
+    // Get executable directory for setting working directory
     wchar_t exePath[MAX_PATH];
     GetModuleFileNameW(nullptr, exePath, MAX_PATH);
-    
-    std::wstring dbPath = exePath;
-    size_t lastSlash = dbPath.find_last_of(L"\\/");
     std::wstring exeDir;
+    size_t lastSlash = std::wstring(exePath).find_last_of(L"\\/");
     if (lastSlash != std::wstring::npos) {
-        exeDir = dbPath.substr(0, lastSlash + 1);
-        dbPath = exeDir + L"WinProgramManager.db";
-    } else {
-        dbPath = L"WinProgramManager.db";
+        exeDir = std::wstring(exePath).substr(0, lastSlash + 1);
     }
     
     // Set working directory to executable location for portable relative paths

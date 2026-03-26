@@ -24,6 +24,7 @@
 #include "task_scheduler.h"
 #include "settings_dialog.h"
 #include "ini_utils.h"
+#include "db_path_utils.h"
 
 // Bring the given window to the user's foreground reliably (temporary attach input)
 static void BringWindowToFront(HWND hwnd) {
@@ -2057,15 +2058,13 @@ void ResizeControls(HWND hwnd) {
 }
 
 bool OpenDatabase() {
-    wchar_t exePath[MAX_PATH];
-    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
-    
-    std::wstring dbPath = exePath;
-    size_t lastSlash = dbPath.find_last_of(L"\\/");
-    if (lastSlash != std::wstring::npos) {
-        dbPath = dbPath.substr(0, lastSlash + 1);
+    // Get database path from ProgramData (placed there by the installer)
+    std::wstring dbPath = GetDatabasePath();
+    if (dbPath.empty()) {
+        MessageBoxW(NULL, L"Failed to get ProgramData folder path.", 
+                    g_locale.database_error_title.c_str(), MB_ICONERROR | MB_OK);
+        return false;
     }
-    dbPath += L"WinProgramManager.db";
     
     // Convert to UTF-8
     int size = WideCharToMultiByte(CP_UTF8, 0, dbPath.c_str(), -1, nullptr, 0, nullptr, nullptr);

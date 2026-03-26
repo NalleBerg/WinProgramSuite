@@ -7,6 +7,7 @@
 #include "bouncing_ball.h"
 #include "keyboard_shortcuts.h"
 #include "resource.h"
+#include "db_path_utils.h"
 #include <windows.h>
 #include <windowsx.h>
 #include <commctrl.h>
@@ -933,18 +934,21 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
         silentMode = true;
     }
     
-    // Get database path (same directory as executable)
+    // Get database path from ProgramData (placed there by the installer)
+    g_dbPath = GetDatabasePath();
+    if (g_dbPath.empty()) {
+        MessageBoxW(NULL, L"Failed to get database path from ProgramData.", 
+                    L"Database Error", MB_ICONERROR | MB_OK);
+        return 1;
+    }
+    
+    // Get executable directory for setting working directory
     wchar_t exePath[MAX_PATH];
     GetModuleFileNameW(nullptr, exePath, MAX_PATH);
-    
-    g_dbPath = exePath;
-    size_t lastSlash = g_dbPath.find_last_of(L"\\/");
     std::wstring exeDir;
+    size_t lastSlash = std::wstring(exePath).find_last_of(L"\\/");
     if (lastSlash != std::wstring::npos) {
-        exeDir = g_dbPath.substr(0, lastSlash + 1);
-        g_dbPath = exeDir + L"WinProgramManager.db";
-    } else {
-        g_dbPath = L"WinProgramManager.db";
+        exeDir = std::wstring(exePath).substr(0, lastSlash + 1);
     }
     
     // Set working directory

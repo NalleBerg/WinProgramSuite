@@ -1,4 +1,5 @@
 #include "WinProgramUpdater.h"
+#include "db_path_utils.h"
 #include <windows.h>
 #include <shlobj.h>
 #include <sqlite3.h>
@@ -17,12 +18,16 @@ WinProgramUpdater::WinProgramUpdater(const std::wstring& dbPath)
       logCallback_(nullptr), logUserData_(nullptr),
       statsCallback_(nullptr), statsUserData_(nullptr),
       cancelFlag_(nullptr) {
-    // Set search database path in same directory as main database
-    size_t lastSlash = dbPath.find_last_of(L"\\/");
-    if (lastSlash != std::wstring::npos) {
-        searchDbPath_ = dbPath.substr(0, lastSlash + 1) + L"WinProgramsSearch.db";
-    } else {
-        searchDbPath_ = L"WinProgramsSearch.db";
+    // Get search database path from ProgramData (shared for all users)
+    searchDbPath_ = GetSearchDatabasePath();
+    if (searchDbPath_.empty()) {
+        // Fallback to same directory as main database
+        size_t lastSlash = dbPath.find_last_of(L"\\/");
+        if (lastSlash != std::wstring::npos) {
+            searchDbPath_ = dbPath.substr(0, lastSlash + 1) + L"WinProgramsSearch.db";
+        } else {
+            searchDbPath_ = L"WinProgramsSearch.db";
+        }
     }
     InitializeTagPatterns();
 }

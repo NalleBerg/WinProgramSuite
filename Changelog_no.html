@@ -1,7 +1,14 @@
 <h2 style="text-align: center; background-color: #e8f4f8; padding: 15px; border-radius: 5px; margin-bottom: 20px;"><span style="color: #0066cc;">📦 WinProgramSuite &mdash; Komplett Windows Pakkeh&aring;ndteringssystem</span></h2>
 <h3 style="text-align: center;">&nbsp;</h3>
-<p style="text-align: center; font-size: 14px; color: #666; margin-bottom: 30px;"><strong>Siste oppdatering:</strong> 21. februar 2026 | <strong>Delt Databaseplassering</strong><br />Denne endringsloggen dekker <strong>WinProgramManager</strong>, databaseh&aring;ndteringskomponenten i WinProgramSuite.<br />For automatiske oppdateringsfunksjoner, se <strong>WinUpdate</strong>-dokumentasjon.</p>
-<h3 style="text-align: center;"><span style="color: #ff0000;">WinProgramManager Versjon 2026.02.21.07 — Oppdatering 21</span></h3>
+<p style="text-align: center; font-size: 14px; color: #666; margin-bottom: 30px;"><strong>Siste oppdatering:</strong> 26. mars 2026 | <strong>Feilrettinger og opprydding</strong><br />Denne endringsloggen dekker <strong>WinProgramManager</strong> og <strong>WinUpdate</strong>, komponentene i WinProgramSuite.<br />For automatiske oppdateringsfunksjoner, se <strong>WinUpdate</strong>-dokumentasjon.</p>
+<h3 style="text-align: center;"><span style="color: #ff0000;">WinProgramSuite Versjon 2026.03.26.07</span></h3>
+<p><strong>Feilrettinger og opprydding (26. mars 2026):</strong></p>
+<ul>
+<li><strong>WinUpdate — Norsk Avbryt-knapp fikset:</strong> Bekreftelsesdialogen for hopp over/uskippe viste &laquo;OK&raquo; i stedet for &laquo;Avbryt&raquo; for avbryt-knappen i norsk (bokmål) lokale. Fikset <code>btn_cancel</code> i <code>nb_NO.txt</code>.</li>
+<li><strong>WinProgramManager — fjernet f&oslash;rste-kj&oslash;ring DB-migrering:</strong> Koden som flyttet <code>WinProgramManager.db</code> fra installasjonsmappen til <code>C:\ProgramData\WinProgramManager\</code> kj&oslash;rte uten administratorrettigheter og forårsaket en feilmelding ved f&oslash;rste oppstart. Migrasjonskoden er fjernet fra <code>db_path_utils.h</code>, <code>main.cpp</code>, <code>updater_gui.cpp</code> og <code>updater_main.cpp</code>. Installasjonsprogrammet plasserer nå databasen direkte på riktig sted.</li>
+</ul>
+<h3 style="text-align: center;">&nbsp;</h3>
+<h3 style="text-align: center;"><span style="color: #ff0000;">WinProgramManager Versjon 2026.02.21.07</span></h3>
 <p><strong>Delt Databaseplassering (21. februar 2026):</strong></p>
 <ul>
 <li><strong>Sentralisert Databaselagring:</strong> Databasen lagres n&aring; i <code>C:\ProgramData\WinProgramManager\WinProgramManager.db</code> i stedet for i per-bruker installasjonskatalog</li>

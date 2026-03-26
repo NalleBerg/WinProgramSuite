@@ -1,7 +1,14 @@
 <h2 style="text-align: center; background-color: #e8f4f8; padding: 15px; border-radius: 5px; margin-bottom: 20px;"><span style="color: #0066cc;">📦 WinProgramSuite &mdash; Komplett Windows Pakethanteringssystem</span></h2>
-<p style="text-align: center; font-size: 14px; color: #666; margin-bottom: 30px;"><strong>Senaste uppdateringen:</strong> 21 februari 2026 | <strong>Delad Databasplats</strong><br />Denna &auml;ndringslogg t&auml;cker <strong>WinProgramManager</strong>, databashanteringskomponenten i WinProgramSuite.<br />F&ouml;r automatiska uppdateringsfunktioner, se <strong>WinUpdate</strong>-dokumentation.</p>
+<p style="text-align: center; font-size: 14px; color: #666; margin-bottom: 30px;"><strong>Senaste uppdateringen:</strong> 26 mars 2026 | <strong>Felr&auml;ttningar och st&auml;dning</strong><br />Denna &auml;ndringslogg t&auml;cker <strong>WinProgramManager</strong> och <strong>WinUpdate</strong>, komponenterna i WinProgramSuite.<br />F&ouml;r automatiska uppdateringsfunktioner, se <strong>WinUpdate</strong>-dokumentation.</p>
 <h3 style="text-align: center;">&nbsp;</h3>
-<h3 style="text-align: center;"><span style="color: #ff0000;">WinProgramManager Version 2026.02.21.07 — Uppdatering 21</span></h3>
+<h3 style="text-align: center;"><span style="color: #ff0000;">WinProgramSuite Version 2026.03.26.07</span></h3>
+<p><strong>Felr&auml;ttningar och st&auml;dning (26 mars 2026):</strong></p>
+<ul>
+<li><strong>WinUpdate — Norsk Avbryt-knapp fixad:</strong> Bekr&auml;ftelsedialogen f&ouml;r hoppa &ouml;ver/&aring;ngra visade &laquo;OK&raquo; ist&auml;llet f&ouml;r &laquo;Avbryt&raquo; f&ouml;r avbryt-knappen i norsk (bokm&aring;l) spr&aring;kfil. Fixade <code>btn_cancel</code> i <code>nb_NO.txt</code>.</li>
+<li><strong>WinProgramManager — borttagen f&ouml;rsta-k&ouml;rning DB-migrering:</strong> Koden som flyttade <code>WinProgramManager.db</code> fr&aring;n installationsmappen till <code>C:\ProgramData\WinProgramManager\</code> k&ouml;rde utan administratörsr&auml;ttigheter och orsakade ett felmeddelande vid f&ouml;rsta start. Migreringskoden har tagits bort fr&aring;n <code>db_path_utils.h</code>, <code>main.cpp</code>, <code>updater_gui.cpp</code> och <code>updater_main.cpp</code>. Installationsprogrammet placerar nu databasen direkt p&aring; r&auml;tt plats.</li>
+</ul>
+<h3 style="text-align: center;">&nbsp;</h3>
+<h3 style="text-align: center;"><span style="color: #ff0000;">WinProgramManager Version 2026.02.21.07</span></h3>
 <p><strong>Delad Databasplats (21 februari 2026):</strong></p>
 <ul>
 <li><strong>Centraliserad Databaslagring:</strong> Databasen lagras nu i <code>C:\ProgramData\WinProgramManager\WinProgramManager.db</code> ist&auml;llet f&ouml;r i per-anv&auml;ndare installationskatalog</li>

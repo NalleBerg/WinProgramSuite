@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WinProgramManager - Changelog</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        h1 {
+            color: #0078d4;
+            border-bottom: 3px solid #0078d4;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #106ebe;
+            margin-top: 30px;
+            padding: 10px;
+            background-color: #e7f3ff;
+            border-left: 4px solid #0078d4;
+        }
+        .version {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #0078d4;
+        }
+        .date {
+            color: #666;
+            font-style: italic;
+        }
+        .category {
+            font-weight: bold;
+            color: #107c10;
+            margin-top: 15px;
+        }
+        ul {
+            line-height: 1.8;
+        }
+        .breaking {
+            background-color: #fff4ce;
+            border-left: 4px solid #ff8c00;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        .feature {
+            background-color: #e7f7e7;
+            border-left: 4px solid #107c10;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        .bugfix {
+            background-color: #f0f0f0;
+            border-left: 4px solid #666;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        code {
+            background-color: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Courier New', monospace;
+        }
+    </style>
+</head>
+<body>
+    <h1>WinProgramManager - Changelog</h1>
+    
+    <h2>
+        <span class="version">Version 2026.02.21.07</span>
+        <span class="date">- February 21, 2026</span>
+    </h2>
+    
+    <div class="breaking">
+        <div class="category">🔴 BREAKING CHANGES - Multi-User Database Support</div>
+        <ul>
+            <li><strong>Database Location Changed:</strong> Databases now stored in <code>C:\ProgramData\WinProgramManager\</code> instead of the executable directory</li>
+            <li><strong>Automatic Migration:</strong> On first run, databases are automatically moved from the installation directory to ProgramData</li>
+            <li><strong>Shared Access:</strong> All Windows users on the same machine now share the same database instance</li>
+            <li><strong>Permissions:</strong> Requires write access to ProgramData (typically available to all users)</li>
+        </ul>
+    </div>
+    
+    <div class="feature">
+        <div class="category">✨ New Features</div>
+        <ul>
+            <li><strong>Multi-User Support:</strong> Multiple Windows users can now use WinProgramManager simultaneously with shared database</li>
+            <li><strong>Database Migration Utility:</strong> New <code>db_path_utils.h</code> provides centralized path management</li>
+            <li><strong>Automatic First-Run Migration:</strong> Seamlessly moves databases to ProgramData without user intervention</li>
+            <li><strong>Cross-Drive Support:</strong> Migration handles cross-drive scenarios with copy+delete fallback</li>
+        </ul>
+    </div>
+    
+    <div class="feature">
+        <div class="category">🔧 Technical Improvements</div>
+        <ul>
+            <li><strong>Unified Path Management:</strong> All components (Manager, UpdaterGUI, UpdaterConsole) use consistent path logic</li>
+            <li><strong>FOLDERID_ProgramData:</strong> Uses Windows Known Folder API for reliable ProgramData location</li>
+            <li><strong>Error Handling:</strong> Improved error messages with specific path information and permission guidance</li>
+            <li><strong>Search Database:</strong> Temporary search database also moved to ProgramData for consistency</li>
+        </ul>
+    </div>
+    
+    <div class="category">📦 Distribution Changes</div>
+    <ul>
+        <li>Database (<code>WinProgramManager.db</code>) continues to ship in the installation directory</li>
+        <li>On first launch, database is automatically moved to <code>C:\ProgramData\WinProgramManager\</code></li>
+        <li>Subsequent installations/uninstallations preserve the ProgramData database</li>
+    </ul>
+    
+    <div class="category">🔄 Migration Behavior</div>
+    <ul>
+        <li><strong>First Run:</strong> Database moves from installation directory → ProgramData</li>
+        <li><strong>Already Migrated:</strong> No action taken, uses existing ProgramData database</li>
+        <li><strong>No Database Found:</strong> Error displayed (fresh install should include database)</li>
+        <li><strong>Search Database:</strong> Migrated if exists, otherwise created fresh in ProgramData</li>
+    </ul>
+    
+    <div class="category">💻 Affected Components</div>
+    <ul>
+        <li><strong>WinProgramManager.exe:</strong> Main application - migrates on launch</li>
+        <li><strong>WinProgramUpdaterGUI.exe:</strong> GUI updater - migrates on launch</li>
+        <li><strong>WinProgramUpdater.exe:</strong> Legacy silent updater - migrates on launch</li>
+        <li><strong>WinProgramUpdaterConsole.exe:</strong> Legacy console updater - migrates on launch</li>
+    </ul>
+    
+    <div class="category">📝 Files Modified</div>
+    <ul>
+        <li><code>db_path_utils.h</code> (NEW) - Centralized database path management and migration logic</li>
+        <li><code>main.cpp</code> - Updated to use ProgramData path with migration</li>
+        <li><code>updater_gui.cpp</code> - Updated to use ProgramData path with migration</li>
+        <li><code>updater_main.cpp</code> - Updated to use ProgramData path with migration</li>
+        <li><code>WinProgramUpdater.cpp</code> - Updated search database to use ProgramData</li>
+    </ul>
+    
+    <hr style="margin: 40px 0; border: 0; border-top: 2px solid #ccc;">
+    
+    <h2>
+        <span class="version">Version 2026.02.19.10</span>
+        <span class="date">- February 19, 2026</span>
+    </h2>
+    
+    <div class="feature">
+        <div class="category">✨ Previous Features</div>
+        <ul>
+            <li>Complete Windows Package Management System</li>
+            <li>SQLite database with 115+ MB of winget package data</li>
+            <li>Advanced search and filtering capabilities</li>
+            <li>Installed applications tracking and management</li>
+            <li>Automatic database updater with intelligent tagging</li>
+            <li>Multi-language support (English, Norwegian, Swedish)</li>
+            <li>Category-based package organization</li>
+            <li>Integration with winget for package operations</li>
+        </ul>
+    </div>
+    
+</body>
+</html>

@@ -1,6 +1,8 @@
 # WinProgramSuite — Complete Windows Package Management System
 
-**Latest Update:** 21 February 2026 | **Shared Database Location**
+**Latest Update:** 26 March 2026 | **Bug fixes & cleanup**
+
+**Note (26 March 2026):** Fixed Norwegian (Bokmål) locale in WinUpdate where the cancel button in the skip/unskip confirmation dialog showed "OK" instead of "Avbryt". Also removed the first-run database migration code in WinProgramManager — the installer now places `WinProgramManager.db` directly in `C:\ProgramData\WinProgramManager\` so no runtime migration (and no admin rights) are needed at first launch.
 
 **Note (21 February 2026):** The application database is now stored in `C:\ProgramData\WinProgramManager\WinProgramManager.db`, allowing all users on the system to share the same package database and metadata. This improves consistency and reduces disk usage when multiple users use the application.
 
