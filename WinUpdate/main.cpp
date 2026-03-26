@@ -2943,9 +2943,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                     // Re-populate ListView to update Skip column text with new translation
                     PopulateListView(hListLocal);
                 }
-                // update window title but do not translate app name
-                std::wstring winTitle = std::wstring(L"WinUpdate - ") + t("app_window_suffix");
-                SetWindowTextW(hwnd, winTitle.c_str());
+                // update window title
+                SetWindowTextW(hwnd, L"WinUpdate");
                 // Update button texts
                 HWND hBtnUnskip = GetDlgItem(hwnd, IDC_BTN_UNSKIP);
                 if (hBtnUnskip) SetWindowTextW(hBtnUnskip, t("unskip_btn").c_str());
@@ -3295,8 +3294,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR pCmdLine, int nCmdShow
     // load excluded apps
     LoadExcludeSettings(g_excluded_apps);
 
-    std::wstring winTitle = std::wstring(L"WinUpdate - ") + t("app_window_suffix");
-    HWND hwnd = CreateWindowExW(0, CLASS_NAME, winTitle.c_str(), WS_OVERLAPPEDWINDOW,
+    HWND hwnd = CreateWindowExW(0, CLASS_NAME, L"WinUpdate", WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT, 820, 430, NULL, NULL, hInstance, NULL);
     if (!hwnd) return 0;
     
