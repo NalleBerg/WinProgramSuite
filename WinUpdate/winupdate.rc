@@ -1,9 +1,20 @@
 // winupdate.rc - resource script for WinUpdate
 #include "resource.h"
 
+// Embed the application manifest (asInvoker). This prevents Windows' Installer
+// Detection heuristic from forcing a UAC prompt at launch just because the
+// executable name contains "Update", so the per-user Startup shortcut can run.
+#ifndef CREATEPROCESS_MANIFEST_RESOURCE_ID
+#define CREATEPROCESS_MANIFEST_RESOURCE_ID 1
+#endif
+#ifndef RT_MANIFEST
+#define RT_MANIFEST 24
+#endif
+CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "winupdate.manifest"
+
 1 VERSIONINFO
- FILEVERSION 2026,1,20,8
- PRODUCTVERSION 2026,1,20,8
+ FILEVERSION 2026,7,10,16
+ PRODUCTVERSION 2026,7,10,16
  FILEFLAGSMASK 0x3fL
  FILEFLAGS 0x0L
  FILEOS 0x40004L
@@ -16,12 +27,12 @@
     BEGIN
       VALUE "CompanyName", "NalleBerg\0"
       VALUE "FileDescription", "WinUpdate - Windows Update Manager for winget\0"
-      VALUE "FileVersion", "2026.1.20.8\0"
+      VALUE "FileVersion", "2026.07.10.16\0"
       VALUE "InternalName", "WinUpdate\0"
       VALUE "LegalCopyright", "Copyright (C) 2025-2026 NalleBerg. Licensed under GPLv2.\0"
       VALUE "OriginalFilename", "WinUpdate.exe\0"
       VALUE "ProductName", "WinUpdate\0"
-      VALUE "ProductVersion", "2026.1.20.8\0"
+      VALUE "ProductVersion", "2026.07.10.16\0"
     END
   END
   BLOCK "VarFileInfo"

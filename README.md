@@ -1,6 +1,8 @@
 # WinProgramSuite — Complete Windows Package Management System
 
-**Latest Update:** 26 March 2026 | **Bug fixes & cleanup**
+**Latest Update:** 10 July 2026 | **WinUpdate startup fix** | **v2026.07.10.16**
+
+**Note (10 July 2026):** Fixed WinUpdate requesting UAC elevation at startup. Because the executable is named `WinUpdate.exe`, Windows' Installer Detection heuristic automatically demanded administrator rights at launch — and Windows silently blocks elevation-requiring apps from the per-user Startup folder, so WinUpdate never started with Windows or appeared in the system tray. An application manifest (`winupdate.manifest`, referenced from `winupdate.rc`) declaring `requestedExecutionLevel level="asInvoker"` is now embedded, so WinUpdate launches at normal privilege and the single UAC prompt appears only when you press **Update now** (elevating `winget_helper.exe` for the actual installation).
 
 **Note (26 March 2026):** Fixed Norwegian (Bokmål) locale in WinUpdate where the cancel button in the skip/unskip confirmation dialog showed "OK" instead of "Avbryt". Also removed the first-run database migration code in WinProgramManager — the installer now places `WinProgramManager.db` directly in `C:\ProgramData\WinProgramManager\` so no runtime migration (and no admin rights) are needed at first launch.
 

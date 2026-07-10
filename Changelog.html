@@ -1,6 +1,14 @@
 <h2 style="text-align: center; background-color: #e8f4f8; padding: 15px; border-radius: 5px; margin-bottom: 20px;"><span style="color: #0066cc;">📦 WinProgramSuite &mdash; Complete Windows Package Management System</span></h2>
 <h3 style="text-align: center;">&nbsp;</h3>
-<p style="text-align: center; font-size: 14px; color: #666; margin-bottom: 30px;"><strong>Latest Update:</strong> 26 March 2026 | <strong>Bug fixes &amp; cleanup</strong><br />This changelog covers <strong>WinProgramManager</strong> and <strong>WinUpdate</strong>, the components of WinProgramSuite.<br />For automatic update features, see <strong>WinUpdate</strong> documentation.</p>
+<p style="text-align: center; font-size: 14px; color: #666; margin-bottom: 30px;"><strong>Latest Update:</strong> 10 July 2026 | <strong>WinUpdate startup fix</strong><br />This changelog covers <strong>WinProgramManager</strong> and <strong>WinUpdate</strong>, the components of WinProgramSuite.<br />For automatic update features, see <strong>WinUpdate</strong> documentation.</p>
+<h3 style="text-align: center;"><span style="color: #ff0000;">WinProgramSuite Version 2026.07.10.16</span></h3>
+<p><strong>WinUpdate startup elevation fix (10 July 2026):</strong></p>
+<ul>
+<li><strong>WinUpdate no longer requests UAC at startup:</strong> Because the executable is named <code>WinUpdate.exe</code>, Windows' Installer Detection heuristic automatically demanded administrator elevation at launch. Windows silently blocks elevation-requiring apps from the per-user Startup folder, so the app never started with Windows and never appeared in the system tray.</li>
+<li><strong>Embedded application manifest (asInvoker):</strong> Added <code>winupdate.manifest</code> (referenced from <code>winupdate.rc</code>) declaring <code>requestedExecutionLevel level="asInvoker"</code>. This disables the heuristic, so WinUpdate now launches at normal privilege from the Startup shortcut and appears in the system tray from Windows startup.</li>
+<li><strong>Elevation only when installing:</strong> The single UAC prompt now appears only when you press <em>Update now</em>, elevating <code>winget_helper.exe</code> for the duration of the actual installation &mdash; exactly where administrator rights are required.</li>
+</ul>
+<h3 style="text-align: center;">&nbsp;</h3>
 <h3 style="text-align: center;"><span style="color: #ff0000;">WinProgramSuite Version 2026.03.26.07</span></h3>
 <p><strong>Bug fixes &amp; cleanup (26 March 2026):</strong></p>
 <ul>

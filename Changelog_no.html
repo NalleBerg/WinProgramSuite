@@ -1,6 +1,14 @@
 <h2 style="text-align: center; background-color: #e8f4f8; padding: 15px; border-radius: 5px; margin-bottom: 20px;"><span style="color: #0066cc;">📦 WinProgramSuite &mdash; Komplett Windows Pakkeh&aring;ndteringssystem</span></h2>
 <h3 style="text-align: center;">&nbsp;</h3>
-<p style="text-align: center; font-size: 14px; color: #666; margin-bottom: 30px;"><strong>Siste oppdatering:</strong> 26. mars 2026 | <strong>Feilrettinger og opprydding</strong><br />Denne endringsloggen dekker <strong>WinProgramManager</strong> og <strong>WinUpdate</strong>, komponentene i WinProgramSuite.<br />For automatiske oppdateringsfunksjoner, se <strong>WinUpdate</strong>-dokumentasjon.</p>
+<p style="text-align: center; font-size: 14px; color: #666; margin-bottom: 30px;"><strong>Siste oppdatering:</strong> 10. juli 2026 | <strong>WinUpdate oppstartsfiks</strong><br />Denne endringsloggen dekker <strong>WinProgramManager</strong> og <strong>WinUpdate</strong>, komponentene i WinProgramSuite.<br />For automatiske oppdateringsfunksjoner, se <strong>WinUpdate</strong>-dokumentasjon.</p>
+<h3 style="text-align: center;"><span style="color: #ff0000;">WinProgramSuite Versjon 2026.07.10.16</span></h3>
+<p><strong>WinUpdate oppstart-elevering fikset (10. juli 2026):</strong></p>
+<ul>
+<li><strong>WinUpdate ber ikke lenger om UAC ved oppstart:</strong> Fordi programfilen heter <code>WinUpdate.exe</code>, krevde Windows' installasjonsgjenkjenning automatisk administratorrettigheter ved oppstart. Windows blokkerer stille programmer som krever elevering fra oppstartsmappen til brukeren, slik at appen aldri startet med Windows og aldri dukket opp i systemstatusfeltet.</li>
+<li><strong>Innebygd programmanifest (asInvoker):</strong> La til <code>winupdate.manifest</code> (referert fra <code>winupdate.rc</code>) som angir <code>requestedExecutionLevel level="asInvoker"</code>. Dette deaktiverer gjenkjenningen, slik at WinUpdate nå starter med vanlige rettigheter fra oppstartssnarveien og vises i systemstatusfeltet fra Windows-oppstart.</li>
+<li><strong>Elevering kun ved installering:</strong> Den ene UAC-forespørselen vises nå bare når du trykker <em>Oppdater nå</em>, og elevererer <code>winget_helper.exe</code> så lenge selve installasjonen pågår &mdash; nøyaktig der administratorrettigheter kreves.</li>
+</ul>
+<h3 style="text-align: center;">&nbsp;</h3>
 <h3 style="text-align: center;"><span style="color: #ff0000;">WinProgramSuite Versjon 2026.03.26.07</span></h3>
 <p><strong>Feilrettinger og opprydding (26. mars 2026):</strong></p>
 <ul>

@@ -1,5 +1,13 @@
 <h2 style="text-align: center; background-color: #e8f4f8; padding: 15px; border-radius: 5px; margin-bottom: 20px;"><span style="color: #0066cc;">📦 WinProgramSuite &mdash; Komplett Windows Pakethanteringssystem</span></h2>
-<p style="text-align: center; font-size: 14px; color: #666; margin-bottom: 30px;"><strong>Senaste uppdateringen:</strong> 26 mars 2026 | <strong>Felr&auml;ttningar och st&auml;dning</strong><br />Denna &auml;ndringslogg t&auml;cker <strong>WinProgramManager</strong> och <strong>WinUpdate</strong>, komponenterna i WinProgramSuite.<br />F&ouml;r automatiska uppdateringsfunktioner, se <strong>WinUpdate</strong>-dokumentation.</p>
+<p style="text-align: center; font-size: 14px; color: #666; margin-bottom: 30px;"><strong>Senaste uppdateringen:</strong> 10 juli 2026 | <strong>WinUpdate startfix</strong><br />Denna &auml;ndringslogg t&auml;cker <strong>WinProgramManager</strong> och <strong>WinUpdate</strong>, komponenterna i WinProgramSuite.<br />F&ouml;r automatiska uppdateringsfunktioner, se <strong>WinUpdate</strong>-dokumentation.</p>
+<h3 style="text-align: center;">&nbsp;</h3>
+<h3 style="text-align: center;"><span style="color: #ff0000;">WinProgramSuite Version 2026.07.10.16</span></h3>
+<p><strong>WinUpdate start-h&ouml;jning fixad (10 juli 2026):</strong></p>
+<ul>
+<li><strong>WinUpdate beg&auml;r inte l&auml;ngre UAC vid start:</strong> Eftersom programfilen heter <code>WinUpdate.exe</code> kr&auml;vde Windows installationsdetektering automatiskt administrat&ouml;rsr&auml;ttigheter vid start. Windows blockerar tyst program som kr&auml;ver h&ouml;jning fr&aring;n anv&auml;ndarens startmapp, s&aring; appen startade aldrig med Windows och visades aldrig i systemf&auml;ltet.</li>
+<li><strong>Inb&auml;ddat programmanifest (asInvoker):</strong> Lade till <code>winupdate.manifest</code> (refererat fr&aring;n <code>winupdate.rc</code>) som anger <code>requestedExecutionLevel level="asInvoker"</code>. Detta inaktiverar detekteringen, s&aring; WinUpdate startar nu med normala r&auml;ttigheter fr&aring;n startgenv&auml;gen och visas i systemf&auml;ltet fr&aring;n Windows-start.</li>
+<li><strong>H&ouml;jning endast vid installation:</strong> Den enda UAC-f&ouml;rfr&aring;gan visas nu bara n&auml;r du trycker <em>Uppdatera nu</em>, och h&ouml;jer <code>winget_helper.exe</code> s&aring; l&auml;nge sj&auml;lva installationen p&aring;g&aring;r &mdash; exakt d&auml;r administrat&ouml;rsr&auml;ttigheter kr&auml;vs.</li>
+</ul>
 <h3 style="text-align: center;">&nbsp;</h3>
 <h3 style="text-align: center;"><span style="color: #ff0000;">WinProgramSuite Version 2026.03.26.07</span></h3>
 <p><strong>Felr&auml;ttningar och st&auml;dning (26 mars 2026):</strong></p>
